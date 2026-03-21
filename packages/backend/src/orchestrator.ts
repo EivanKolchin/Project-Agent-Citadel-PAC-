@@ -5,12 +5,53 @@ import { EventEmitter } from "events";
 import axios from "axios";
 import crypto from "crypto";
 
+const withRetry = async <T>(fn: () => Promise<T>, retries = 3, baseDelay = 500, label = "Operation"): Promise<T> => {
+  let attempt = 0;
+  while (attempt < retries) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      attempt++;
+      if (attempt >= retries) throw e;
+      const delay = baseDelay * Math.pow(2, attempt - 1);
+      console.warn(`[${new Date().toISOString()}] ${label} failed. Retrying ${attempt}/${retries} in ${delay}ms... (${e.message})`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw new Error("Retry loop exhausted");
+};
+
 export class Orchestrator {
   constructor(
     private blockchain: BlockchainService,
     private router: RouterAgent,
     private eventEmitter: EventEmitter
   ) {}
+
+  private async assignAndExecute(agents: Agent[], taskId: string, description: string, reqCapabilities: string[] = []): Promise<{ result: TaskResult, agent: string }> {
+    let activeAgents = [...agents];
+    
+    while (activeAgents.length > 0) {
+      const assignedAgent = await this.router.routeTask({ id: taskId, description } as Task, activeAgents);
+      const agent = activeAgents.find(a => a.address === assignedAgent);
+      
+      if (!agent) throw new Error("Router selected an unknown agent address");
+
+      try {
+        await withRetry(() => this.blockchain.assignTask(taskId, assignedAgent), 1, 1000, "Blockchain Assign Task");
+        this.eventEmitter.emit("task:assigned", { taskId, agentName: agent.name });
+        this.eventEmitter.emit("activity", { type: "agent:hired", message: `${agent.name} hired for task ${taskId}` });
+
+        const res = await withRetry(() => axios.post(`${agent.endpoint}/execute`, { taskId, description }), 3, 500, `Agent Execution (${agent.name})`);
+        return { result: res.data.result, agent: assignedAgent };
+      } catch (e: any) {
+        console.error(`[${new Date().toISOString()}] Agent ${agent.name} failed. Removing from active roster and retrying...`, e.message);
+        activeAgents = activeAgents.filter(a => a.address !== assignedAgent);
+        if (activeAgents.length === 0) throw new Error("All capable agents failed");
+      }
+    }
+    throw new Error("Agent routing failed. No active agents found.");
+  }
 
   public async handleNewTask(taskId: string, description: string, budgetEth: string) {
     try {
@@ -28,91 +69,53 @@ export class Orchestrator {
       if (shouldDecompose) {
         this.eventEmitter.emit("activity", { type: "system", message: `Task ${taskId} complex, decomposing...` });
         
-        // Find Coordinator Agent to delegate to
-        const coordinator = agents.find(a => a.capabilities.includes("complex_tasks") || a.name === "CoordinatorAgent");
-        
-        if (coordinator) {
-          assignedAgent = coordinator.address;
-          await this.blockchain.assignTask(taskId, assignedAgent);
-          
-          this.eventEmitter.emit("task:assigned", { taskId, agentName: coordinator.name });
-          this.eventEmitter.emit("activity", { type: "agent:hired", message: `Coordinator ${coordinator.name} hired for ${taskId}` });
+        try {
+          const res = await this.assignAndExecute(agents.filter(a => a.capabilities.includes("complex_tasks")), taskId, description);
+          finalResult = res.result;
+          assignedAgent = res.agent;
+        } catch (e) {
+          // Fallback manual...
+          console.warn("Coordinator routing failed, falling back to manual orchestration");
+          const subtasks = await this.router.decomposeTask({ id: taskId, description } as Task);
+          let fullContent = "Aggregated Result:\n";
+          let combinedConfidence = 0;
+          let subTasksUsed: string[] = [];
 
-          const res = await axios.post(`${coordinator.endpoint}/execute`, {
-            taskId,
-            description
-          });
-          
-          finalResult = res.data.result;
-        } else {
-           // Fallback: manual orchestrator decomposition
-           const subtasks = await this.router.decomposeTask({ id: taskId, description } as Task);
-           let fullContent = "Aggregated Result:\n";
-           let combinedConfidence = 0;
-           let subTasksUsed: string[] = [];
-
-           for (let i = 0; i < subtasks.length; i++) {
+          for (let i = 0; i < subtasks.length; i++) {
              const subDesc = subtasks[i];
-             const subAgentAddr = await this.router.routeTask({ id: `sub-${taskId}-${i}`, description: subDesc } as Task, agents);
-             const subAgent = agents.find(a => a.address === subAgentAddr);
-             
-             if (subAgent) {
-                this.eventEmitter.emit("activity", { type: "agent:hired", message: `Sub-agent ${subAgent.name} hired for subtask` });
-                const res = await axios.post(`${subAgent.endpoint}/execute`, {
-                  taskId: `sub-${taskId}-${i}`,
-                  description: subDesc
-                });
-                
-                fullContent += `\n### ${subDesc}\n${res.data.result.content}\n`;
-                combinedConfidence += res.data.result.confidence;
-                subTasksUsed.push(subAgent.address);
-             }
-           }
+             const res = await this.assignAndExecute(agents, `sub-${taskId}-${i}`, subDesc);
+             fullContent += `\n### ${subDesc}\n${res.result.content}\n`;
+             combinedConfidence += res.result.confidence;
+             subTasksUsed.push(res.agent);
+          }
 
-           finalResult = {
-             content: fullContent,
-             confidence: combinedConfidence / subtasks.length,
-             executionTime: 0,
-             subTasksUsed
-           };
-           assignedAgent = agents[0].address; // Hack: assign to first available for payment if no coordinator
+          finalResult = {
+            content: fullContent,
+            confidence: combinedConfidence / subtasks.length,
+            executionTime: 0,
+            subTasksUsed
+          };
+          assignedAgent = agents[0].address; 
         }
 
       } else {
-        // Direct Assignment
-        assignedAgent = await this.router.routeTask({ id: taskId, description } as Task, agents);
-        const agent = agents.find(a => a.address === assignedAgent);
-        
-        if (!agent) {
-          throw new Error("Router selected an unknown agent address");
-        }
-
-        await this.blockchain.assignTask(taskId, assignedAgent);
-        this.eventEmitter.emit("task:assigned", { taskId, agentName: agent.name });
-        this.eventEmitter.emit("activity", { type: "agent:hired", message: `${agent.name} assigned to task ${taskId}` });
-
-        const res = await axios.post(`${agent.endpoint}/execute`, {
-          taskId,
-          description
-        });
-
-        finalResult = res.data.result;
+        const res = await this.assignAndExecute(agents, taskId, description);
+        finalResult = res.result;
+        assignedAgent = res.agent;
       }
 
-      // Hash result and submit
       const resultHash = crypto.createHash("sha256").update(finalResult.content).digest("hex");
-      
       this.eventEmitter.emit("activity", { type: "system", message: `Task ${taskId} complete. Submitting hash: ${resultHash.substring(0, 10)}...` });
       
-      await this.blockchain.submitResult(taskId, resultHash, assignedAgent);
+      await withRetry(() => this.blockchain.submitResult(taskId, resultHash, assignedAgent), 1, 1500, "Blockchain Submit Result");
       
-      // Emit completions
       this.eventEmitter.emit("task:completed", { taskId, result: finalResult });
       this.eventEmitter.emit("payment:sent", { from: "TaskEscrow", to: assignedAgent, amount: budgetEth });
-      this.eventEmitter.emit("activity", { type: "payment:sent", message: `Payment of ${budgetEth} ETH released to ${assignedAgent}` });
+      this.eventEmitter.emit("activity", { type: "payment:sent", message: `Payment of ${budgetEth} ETH released` });
 
     } catch (error: any) {
-      console.error(`Orchestrator failed on task ${taskId}:`, error);
+      console.error(`[${new Date().toISOString()}] Orchestrator failed on task ${taskId}:`, error);
+      this.eventEmitter.emit("task:failed", { taskId, reason: error.message });
       this.eventEmitter.emit("activity", { type: "error", message: `Task ${taskId} failed: ${error.message}` });
     }
   }

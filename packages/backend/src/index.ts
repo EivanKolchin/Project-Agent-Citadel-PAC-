@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import { WebSocketServer } from "ws";
 import http from "http";
+import axios from "axios";
 import { EventEmitter } from "events";
 import { BlockchainService } from "./services/blockchain";
 import { RouterAgent } from "./agents/router";
@@ -20,6 +21,15 @@ const wss = new WebSocketServer({ server });
 const eventEmitter = new EventEmitter();
 const router = new RouterAgent();
 
+// Boot Phase: Environment Validation
+const requiredEnvVars = ["ANTHROPIC_API_KEY", "ENDLESS_RPC_URL", "DEPLOYER_PRIVATE_KEY", "AGENT_REGISTRY_ADDRESS"];
+const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+if (missingVars.length > 0) {
+  console.error(`\n❌ [BOOT ERROR] Missing Required Environment Variables:\n - ${missingVars.join("\n - ")}\n`);
+  console.error("Please configure them in your root .env file.\n");
+  process.exit(1);
+}
+
 // Only initialize if we have the RPC URL configured, otherwise provide a mock or handle the error
 let blockchain: BlockchainService | null = null;
 let orchestrator: Orchestrator | null = null;
@@ -35,6 +45,30 @@ try {
 // In-Memory state for live feed and extended DB details
 const activityLog: any[] = [];
 const tasksDb: Record<string, any> = {};
+const agentStatusCache: Record<string, "active" | "offline" | "busy"> = {};
+
+// Agent Health Polling Loop
+const pollAgentHealth = async () => {
+  if (!blockchain) return;
+  try {
+    const agents = await blockchain.getAllAgents();
+    for (const agent of agents) {
+      try {
+        const res = await axios.get(`${agent.endpoint}/health`, { timeout: 3000 });
+        agentStatusCache[agent.address] = res.data.status || "active";
+      } catch (e) {
+        agentStatusCache[agent.address] = "offline";
+      }
+    }
+    broadcast("agents:health_update", agentStatusCache);
+  } catch (error) {
+    console.warn("Failed to poll agent health:", error);
+  }
+};
+// Poll every 60 seconds
+setInterval(pollAgentHealth, 60000);
+// Initial poll 5 seconds after startup
+setTimeout(pollAgentHealth, 5000);
 
 // Listen to internal events and broadcast to all connected WebSocket clients
 const broadcast = (type: string, payload: any) => {
@@ -82,8 +116,10 @@ app.get("/api/agents", async (req, res) => {
   if (!blockchain) return res.status(503).json({ error: "Blockchain not connected" });
   try {
     const agents = await blockchain.getAllAgents();
-    // In a real app, you would ping each endpoint or use heartbeats to check status
-    const enrichedAgents = agents.map(a => ({ ...a, currentStatus: "idle" }));
+    const enrichedAgents = agents.map(a => ({ 
+      ...a, 
+      currentStatus: agentStatusCache[a.address] || "unknown" 
+    }));
     res.json(enrichedAgents);
   } catch (error: any) {
     res.status(500).json({ error: error.message });

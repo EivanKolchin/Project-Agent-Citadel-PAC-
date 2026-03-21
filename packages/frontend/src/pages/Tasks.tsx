@@ -1,18 +1,59 @@
 import { useApp } from '../context/WebSocketContext';
 import { useState } from 'react';
+import { LuffaSDK } from '../lib/luffa';
 
 export const Tasks = () => {
-  const { tasks, postTask } = useApp();
+  const { tasks, postTask, isLoading } = useApp();
   const [isModalOpen, setModalOpen] = useState(false);
   const [desc, setDesc] = useState('');
   const [budget, setBudget] = useState('0.05');
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [deployStep, setDeployStep] = useState(0); 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if(!desc || !budget) return;
-    await postTask(desc, budget);
-    setModalOpen(false);
-    setDesc('');
+    setIsDeploying(true);
+    setDeployStep(1); // Starting
+    
+    try {
+      // Step 1
+      await new Promise(r => setTimeout(r, 500));
+      setDeployStep(2);
+      const posterAddress = await LuffaSDK.getWalletAddress();
+      
+      // Step 2
+      const txHash = await LuffaSDK.signTransaction({
+        to: '0xEscrowContract', // Escrow mock
+        value: budget
+      });
+      
+      setDeployStep(3);
+      // Step 3
+      await postTask(desc, budget);
+      
+      setDeployStep(4); // Finished
+      setTimeout(() => {
+        setModalOpen(false);
+        setDesc('');
+        setIsDeploying(false);
+        setDeployStep(0);
+      }, 1500);
+
+    } catch (err: any) {
+      console.error(err);
+      setDeployStep(-1); // Error
+      setIsDeploying(false);
+    }
+  };
+
+  const statusMessages: Record<number, string> = {
+    [-1]: 'Error deploying task. Try again.',
+    0: '',
+    1: 'Connecting to Luffa Wallet...',
+    2: 'Awaiting Transaction Signature...',
+    3: 'Transaction confirmed. Routing Task to Network...',
+    4: 'Task Deployed Successfully!'
   };
 
   return (
@@ -41,7 +82,16 @@ export const Tasks = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/80">
-            {tasks.map((t, i) => (
+            {isLoading ? (
+              [1,2,3].map(i => (
+                <tr key={i} className="animate-pulse bg-slate-800/20">
+                  <td className="p-5"><div className="h-4 bg-slate-700/50 rounded w-3/4 mb-2"></div><div className="h-3 bg-slate-700/50 rounded w-1/4"></div></td>
+                  <td className="p-5"><div className="h-4 bg-slate-700/50 rounded w-16"></div></td>
+                  <td className="p-5"><div className="h-6 bg-slate-700/50 rounded w-20"></div></td>
+                  <td className="p-5 hidden sm:table-cell"><div className="h-4 bg-slate-700/50 rounded w-24"></div></td>
+                </tr>
+              ))
+            ) : tasks.map((t, i) => (
               <tr key={t.id || i} className="hover:bg-slate-800/40 transition-colors cursor-pointer group">
                 <td className="p-5">
                   <p className="text-slate-200 font-medium line-clamp-1 max-w-[300px]">{t.description}</p>
@@ -61,7 +111,7 @@ export const Tasks = () => {
                 </td>
               </tr>
             ))}
-            {tasks.length === 0 && <tr><td colSpan={4} className="p-10 text-center text-slate-500">The escrow ledger is empty.</td></tr>}
+            {!isLoading && tasks.length === 0 && <tr><td colSpan={4} className="p-10 text-center text-slate-500">The escrow ledger is empty.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -93,9 +143,16 @@ export const Tasks = () => {
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">Ξ</span>
                 </div>
               </div>
-              <div className="flex gap-3 justify-end mt-8 pt-4 border-t border-slate-800">
-                <button type="button" onClick={() => setModalOpen(false)} className="px-5 py-2.5 text-sm font-medium text-slate-400 hover:text-white transition-colors">Cancel</button>
-                <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-600/20">Sign & Deploy</button>
+              <div className="flex gap-3 justify-end mt-8 pt-4 border-t border-slate-800 items-center">
+                {deployStep !== 0 && (
+                  <span className={`text-xs font-medium mr-auto ${deployStep === -1 ? 'text-red-400' : 'text-indigo-400 animate-pulse'}`}>
+                    {statusMessages[deployStep]}
+                  </span>
+                )}
+                <button type="button" onClick={() => setModalOpen(false)} disabled={isDeploying} className="px-5 py-2.5 text-sm font-medium text-slate-400 hover:text-white transition-colors disabled:opacity-50">Cancel</button>
+                <button type="submit" disabled={isDeploying} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:bg-slate-700">
+                  {isDeploying ? 'Processing...' : 'Sign & Deploy'}
+                </button>
               </div>
             </form>
           </div>

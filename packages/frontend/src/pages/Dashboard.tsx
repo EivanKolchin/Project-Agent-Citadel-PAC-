@@ -1,7 +1,7 @@
 import { useApp } from '../context/WebSocketContext';
 
 export const Dashboard = () => {
-  const { stats, activity } = useApp();
+  const { stats, activity, isLoading } = useApp();
 
   return (
     <div className="space-y-6">
@@ -19,7 +19,11 @@ export const Dashboard = () => {
         ].map((s, i) => (
           <div key={i} className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-sm hover:border-indigo-500/30 transition-colors">
             <h3 className="text-slate-500 text-xs font-semibold uppercase tracking-wider">{s.label}</h3>
-            <p className="text-3xl font-bold text-white mt-2">{s.value}</p>
+            {isLoading ? (
+              <div className="h-9 w-16 bg-slate-800 animate-pulse mt-2 rounded"></div>
+            ) : (
+              <p className="text-3xl font-bold text-white mt-2">{s.value}</p>
+            )}
           </div>
         ))}
       </div>
@@ -29,33 +33,45 @@ export const Dashboard = () => {
           <h2 className="text-sm font-semibold text-white">Live Operations Feed</h2>
         </div>
         <div className="divide-y divide-slate-800/80 max-h-[50vh] overflow-y-auto">
-          {activity.map((act, i) => {
-            let icon = '⚡';
-            if (act.type === 'system' || act.type === 'task:posted') icon = '🟣';
-            else if (act.type === 'task:completed') icon = '🟢';
-            else if (act.type === 'agent:hired' || act.type === 'task:assigned') icon = '🤖';
-            else if (act.type === 'payment:sent') icon = '💰';
-
-            return (
-              <div key={i} className="px-6 py-4 flex items-start space-x-4 hover:bg-slate-800/30 transition-colors">
-                <div className="text-xl mt-0.5 bg-slate-800 p-2 rounded-xl">{icon}</div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-slate-200 leading-snug">{act.message}</p>
-                  <div className="flex items-center space-x-3 mt-1.5">
-                    <span className="text-[11px] font-medium text-slate-500">
-                      {new Date(act.timestamp).toLocaleTimeString()}
-                    </span>
-                    {act.txHash && (
-                      <a href={`https://explorer.endless.net/tx/${act.txHash}`} target="_blank" rel="noreferrer" className="text-[11px] font-medium text-indigo-400 hover:text-indigo-300">
-                        View Transaction ↗
-                      </a>
-                    )}
-                  </div>
+          {isLoading ? (
+            [1, 2, 3].map(i => (
+              <div key={i} className="px-6 py-4 flex items-start space-x-4 animate-pulse">
+                <div className="w-10 h-10 bg-slate-800 rounded-xl"></div>
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-slate-800 rounded w-3/4"></div>
+                  <div className="h-3 bg-slate-800 rounded w-1/4"></div>
                 </div>
               </div>
-            );
-          })}
-          {activity.length === 0 && (
+            ))
+          ) : (
+            activity.map((act, i) => {
+              let icon = '⚡';
+              if (act.type === 'system' || act.type === 'task:posted') icon = '🟣';
+              else if (act.type === 'task:completed') icon = '🟢';
+              else if (act.type === 'agent:hired' || act.type === 'task:assigned') icon = '🤖';
+              else if (act.type === 'payment:sent') icon = '💰';
+
+              return (
+                <div key={i} className="px-6 py-4 flex items-start space-x-4 hover:bg-slate-800/30 transition-colors">
+                  <div className="text-xl mt-0.5 bg-slate-800 p-2 rounded-xl">{icon}</div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-200 leading-snug">{act.message}</p>
+                    <div className="flex items-center space-x-3 mt-1.5">
+                      <span className="text-[11px] font-medium text-slate-500">
+                        {new Date(act.timestamp).toLocaleTimeString()}
+                      </span>
+                      {act.txHash && (
+                        <a href={`https://explorer.endless.net/tx/${act.txHash}`} target="_blank" rel="noreferrer" className="text-[11px] font-medium text-indigo-400 hover:text-indigo-300">
+                          View Transaction ↗
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+          {!isLoading && activity.length === 0 && (
             <div className="p-8 text-center text-sm text-slate-500">
               No network activity. Post a task to awaken the agents.
             </div>

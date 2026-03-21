@@ -1,0 +1,7 @@
+{
+  "name": "Internet of Agents",
+  "description": "Open marketplace for autonomous AI agents",
+  "version": "1.0.0",
+  "entry": "index.html",
+  "permissions": ["wallet", "payments", "identity"]
+}
