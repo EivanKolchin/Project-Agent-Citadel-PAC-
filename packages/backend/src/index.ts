@@ -113,8 +113,15 @@ eventEmitter.on("activity", (payload) => {
 });
 
 eventEmitter.on("task:posted", (payload) => {
-  tasksDb[payload.taskId] = { id: payload.taskId, description: payload.description, bounty: payload.bounty, status: "open", createdAt: Date.now() };
+  if (!tasksDb[payload.taskId]) {
+    tasksDb[payload.taskId] = { id: payload.taskId, description: payload.description, bounty: payload.bounty, status: "open", createdAt: Date.now() };
+  }
   broadcast("task:posted", { task: tasksDb[payload.taskId] });
+  
+  if (orchestrator) {
+     orchestrator.handleNewTask(payload.taskId, payload.description, payload.bounty)
+       .catch(e => console.error("Orchestrator failed:", e));
+  }
 });
 
 eventEmitter.on("task:assigned", (payload) => {
@@ -173,18 +180,27 @@ app.get("/api/tasks", async (req, res) => {
   }
 });
 
+app.post("/api/faucet", async (req, res) => {
+  const { address } = req.body;
+  if (!blockchain) return res.status(503).json({ error: "Blockchain not connected" });
+  try {
+    await blockchain.fundAddress(address, "10.0");
+    res.json({ success: true, message: "10 ETH seeded" });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/tasks", async (req, res) => {
   if (!blockchain || !orchestrator) return res.status(503).json({ error: "Blockchain not connected" });
   const { description, budgetEth } = req.body;
   
   try {
     const taskId = await blockchain.postTask(description, budgetEth);
-    tasksDb[taskId] = { id: taskId, description, bounty: budgetEth, status: "open", createdAt: Date.now() };
+    // Do NOT manually add to tasksDb or start orchestrator here. 
+    // The task:posted blockchain event listener will handle it!
     
-    // Kick off orchestration asynchronously
-    orchestrator.handleNewTask(taskId, description, budgetEth);
-    
-    res.json({ taskId, message: "Task posted and orchestrator started" });
+    res.json({ taskId, message: "Task posted to chain. Orchestrator will be triggered by on-chain event." });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -203,7 +219,19 @@ app.get("/api/stats", async (req, res) => {
   if (!blockchain) return res.status(503).json({ error: "Blockchain not connected" });
   try {
     const stats = await blockchain.getNetworkStats();
-    res.json(stats);
+    
+    // Supplement blockchain state with active memory metrics for greater fidelity
+    const dbTasks = Object.values(tasksDb);
+    const volume = dbTasks.reduce((acc, t: any) => acc + parseFloat(t.bounty || 0), 0);
+    const activeTasks = dbTasks.filter((t: any) => ["open", "assigned"].includes(t.status)).length;
+    const completedTasks = dbTasks.filter((t: any) => t.status === "completed").length;
+    
+    res.json({ 
+      ...stats, 
+      activeTasks: stats.activeTasks + activeTasks, // Combine mock seed data logic
+      completedTasks: stats.completedTasks + completedTasks,
+      totalVolume: volume.toFixed(3) 
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

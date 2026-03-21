@@ -74,15 +74,15 @@ export class BlockchainService {
   }
 
   private setupEventListeners() {
-    if (AGENT_REGISTRY_ADDRESS) {
+    if (AGENT_REGISTRY_ADDRESS && this.agentRegistry) {
       this.agentRegistry.on("AgentRegistered", (agent, name, capabilities, event) => {
-        this.eventEmitter.emit("AgentRegistered", { agent, name, capabilities, txHash: event.log.transactionHash });
+        this.eventEmitter.emit("agent:registered", { agent, name, capabilities, txHash: event.log.transactionHash });
       });
     }
 
-    if (TASK_ESCROW_ADDRESS) {
+    if (TASK_ESCROW_ADDRESS && this.taskEscrow) {
       this.taskEscrow.on("TaskPosted", (taskId, description, bounty, event) => {
-        this.eventEmitter.emit("TaskPosted", {
+        this.eventEmitter.emit("task:posted", {
           taskId: taskId.toString(),
           description,
           bounty: ethers.formatEther(bounty),
@@ -91,7 +91,7 @@ export class BlockchainService {
       });
 
       this.taskEscrow.on("TaskAssigned", (taskId, agentAddress, event) => {
-        this.eventEmitter.emit("TaskAssigned", {
+        this.eventEmitter.emit("task:assigned", {
           taskId: taskId.toString(),
           agentAddress,
           txHash: event.log.transactionHash
@@ -99,14 +99,23 @@ export class BlockchainService {
       });
 
       this.taskEscrow.on("TaskCompleted", (taskId, agentAddress, resultHash, event) => {
-        this.eventEmitter.emit("TaskCompleted", {
+        this.eventEmitter.emit("task:completed", {
           taskId: taskId.toString(),
           agentAddress,
-          resultHash,
+          result: resultHash,
           txHash: event.log.transactionHash
         });
       });
     }
+  }
+
+  async fundAddress(address: string, amountEth: string): Promise<void> {
+    if (!(await this.ensureRpcAvailable())) return;
+    const tx = await this.withTimeout(this.signer.sendTransaction({
+        to: address,
+        value: ethers.parseEther(amountEth)
+    }));
+    await tx.wait();
   }
 
   async getAllAgents(): Promise<Agent[]> {
@@ -165,7 +174,31 @@ export class BlockchainService {
     if (!(await this.ensureRpcAvailable())) return;
     // In our simplified mock, the signer is acting across multiple roles.
     // Usually the assigned agent would submit the result.
-    const tx = await this.withTimeout(this.taskEscrow.submitResult(BigInt(taskId), resultHash));
+    // Wait for the simulated agent processing time
+    console.log(`[Blockchain] Agent ${agentAddress} submitting result for Task ${taskId}: ${resultHash}`);
+    
+    // Instead of using the deployer wallet for EVERYTHING, we map the agentAddress back to the exact Hardhat test wallet index.
+    // We deterministically derived these wallets in deploy.ts. Wallet 0 is Deployer, Wallets 1-3 are Luffa Bots.
+    let targetSigner = this.signer;
+    try {
+      // Create identical deterministic signers from the hardhat test phrase to match the luffa bots
+      const mnemonic = "test test test test test test test test test test test junk"; // Default hardhat mnemonic
+      const hdNode = ethers.HDNodeWallet.fromPhrase(mnemonic);
+      
+      // Let's iterate index 1..9 to see if any match the agentAddress
+      for(let i=1; i<10; i++) {
+        const derivedWallet = hdNode.deriveChild(i);
+        if(derivedWallet.address.toLowerCase() === agentAddress.toLowerCase()) {
+          targetSigner = new ethers.Wallet(derivedWallet.privateKey, this.provider);
+          break;
+        }
+      }
+    } catch(e) {
+      console.warn("Could not derive agent signer, falling back to deployer:", e);
+    }
+    
+    const taskEscrowForAgent = new Contract(TASK_ESCROW_ADDRESS, TASK_ESCROW_ABI, targetSigner);
+    const tx = await this.withTimeout(taskEscrowForAgent.submitResult(BigInt(taskId), resultHash));
     await tx.wait();
 
     // Automatically release payment if verified

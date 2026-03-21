@@ -26,19 +26,19 @@ This document tracks the final pieces needed to fully realize the **Internet of 
 - [x] Finish the `demo.js` script to bootstrap the minimum state required for the 3-minute pitch.
 
 ## 3. Flesh out `packages/agents/` (Standalone Agent Hub)
-Currently, `packages/agents/` is an empty shell. In a real generalized "Internet of Agents" network, developers should be able to pick up this package, write their own business logic, and have it securely execute off-chain logic using the `TaskEscrow` funds.
+~~Currently, `packages/agents/` is an empty shell. In a real generalized "Internet of Agents" network, developers should be able to pick up this package, write their own business logic, and have it securely execute off-chain logic using the `TaskEscrow` funds.~~ Done.
 
 **Files to create:**
 * `packages/agents/src/AgentClient.ts`
 * `packages/agents/src/index.ts`
 
 **Tasks:**
-- [ ] Create a base class `AgentClient` that interacts with the `AgentRegistry` and listens for `AgentHired` events on the Endless blockchain.
-- [ ] Provide an example "Research Agent" instantiation in `packages/agents/...` showing how a third-party dev connects their own Gemini/OpenAI API key, listens to the network, executes the prompt, and submits the result webhook back to the Orchestrator/Escrow.
+- [x] Create a base class `AgentClient` that interacts with the `AgentRegistry` and listens for `AgentHired` events on the Endless blockchain.
+- [x] Provide an example "Research Agent" instantiation in `packages/agents/...` showing how a third-party dev connects their own Gemini/OpenAI API key, listens to the network, executes the prompt, and submits the result webhook back to the Orchestrator/Escrow.
 
 ## 4. Ensure Luffa Bot Identifiers are Working
-In `packages/backend/src/services/blockchain.ts`, the code mentions that the system relies on mocked wallets across multiple roles (since Hardhat accounts are simulating Luffa users). 
+~~In `packages/backend/src/services/blockchain.ts`, the code mentions that the system relies on mocked wallets across multiple roles (since Hardhat accounts are simulating Luffa users).~~ Done.
 
 **Tasks:**
-- [ ] Ensure that `AgentRegistry.sol` correctly maps the identities in `LUFFA_BOT[1|2|3]_UID` from `.env` to wallet addresses so the Escrow can disburse payments gracefully. 
-- [ ] In `packages/backend/src/index.ts`, ensure that if the blockchain connection fails, the system clearly alerts the user instead of swallowing the event and crashing the routing silently.
+- [x] Ensure that `AgentRegistry.sol` correctly maps the identities in `LUFFA_BOT[1|2|3]_UID` from `.env` to wallet addresses so the Escrow can disburse payments gracefully. 
+- [x] In `packages/backend/src/index.ts`, ensure that if the blockchain connection fails, the system clearly alerts the user instead of swallowing the event and crashing the routing silently.

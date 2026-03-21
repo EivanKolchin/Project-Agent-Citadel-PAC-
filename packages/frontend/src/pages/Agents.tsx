@@ -1,6 +1,13 @@
 import { useApp } from '../context/WebSocketContext';
 import { useState } from 'react';
 import { LuffaSDK } from '../lib/luffa';
+import { Interface } from 'ethers';
+
+// To dynamically read from shared config, but let's sync here for UI standalone context
+const AGENT_REGISTRY_ADDRESS = '0x0165878A594ca255338adfa4d48449f69242Eb8F';
+const AGENT_REGISTRY_ABI = [
+  "function registerAgent(string name, string description, string endpoint, string[] capabilities) payable"
+];
 
 export const Agents = () => {
   const { agents, isLoading } = useApp();
@@ -18,7 +25,20 @@ export const Agents = () => {
       const address = await LuffaSDK.getWalletAddress();
       
       setRegStatus('Please sign 0.01 ETH staking provision.');
-      await LuffaSDK.signTransaction({ to: 'AgentRegistryContract', value: '0.01' });
+      
+      const iface = new Interface(AGENT_REGISTRY_ABI);
+      const data = iface.encodeFunctionData("registerAgent", [
+        identity.username,
+        `Frontend-registered agent for ${identity.username}`,
+        `http://localhost:3001/api/luffa/${identity.id}`, // mock webhook for demo agent
+        ["general", "chat"]
+      ]);
+
+      await LuffaSDK.signTransaction({ 
+        to: AGENT_REGISTRY_ADDRESS, 
+        value: '0.01',
+        data: data
+      });
 
       setRegStatus('Agent Registration Complete!');
       setTimeout(() => setRegStatus(''), 3000);

@@ -4,7 +4,8 @@ import { Dashboard } from './pages/Dashboard';
 import { Agents } from './pages/Agents';
 import { Tasks } from './pages/Tasks';
 import { NetworkGraph } from './pages/NetworkGraph';
-import { Activity, Users, CheckSquare, GitMerge } from 'lucide-react';
+import { Settings } from './pages/Settings';
+import { Activity, Users, CheckSquare, GitMerge, Settings as SettingsIcon } from 'lucide-react';
 
 const NavLink = ({ to, icon: Icon, label }: { to: string, icon: any, label: string }) => {
   const location = useLocation();
@@ -25,6 +26,7 @@ const Navigation = () => (
       <NavLink to="/agents" icon={Users} label="Agents" />
       <NavLink to="/tasks" icon={CheckSquare} label="Tasks" />
       <NavLink to="/graph" icon={GitMerge} label="Network" />
+      <NavLink to="/settings" icon={SettingsIcon} label="Settings" />
     </div>
   </nav>
 );
@@ -52,6 +54,7 @@ export default function App() {
               <Route path="/agents" element={<Agents />} />
               <Route path="/tasks" element={<Tasks />} />
               <Route path="/graph" element={<NetworkGraph />} />
+              <Route path="/settings" element={<Settings />} />
             </Routes>
           </main>
         </div>

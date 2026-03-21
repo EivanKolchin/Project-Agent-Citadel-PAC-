@@ -1,3 +1,5 @@
+import { ethers } from 'ethers';
+
 export interface LuffaIdentity {
   id: string;
   username: string;
@@ -6,17 +8,60 @@ export interface LuffaIdentity {
 
 class LuffaSDKWrapper {
   public readonly isLuffaEnvironment: boolean;
+  private mockWallet: ethers.Wallet | null = null;
+  private provider = new ethers.JsonRpcProvider('http://localhost:8545');
 
   constructor() {
-    // Detect Luffa environment (e.g., via window.Luffa or user agent injection)
     this.isLuffaEnvironment = typeof (window as any).Luffa !== 'undefined';
+    if (!this.isLuffaEnvironment) {
+      this.initMockWallet();
+    }
+  }
+
+  // Allow users to manually set their wallet via private key for real transactions
+  public async importPrivateKey(pk: string) {
+    try {
+      this.mockWallet = new ethers.Wallet(pk, this.provider);
+      localStorage.setItem('luffa_mock_pk', pk);
+      console.log("[LuffaSDK] Imported new wallet:", this.mockWallet.address);
+      return this.mockWallet.address;
+    } catch (e: any) {
+      throw new Error(`Invalid Private Key: ${e.message}`);
+    }
+  }
+
+  private async initMockWallet() {
+    try {
+      let pk = localStorage.getItem('luffa_mock_pk');
+      if (!pk) {
+        const wallet = ethers.Wallet.createRandom();
+        pk = wallet.privateKey;
+        localStorage.setItem('luffa_mock_pk', pk);
+      }
+      this.mockWallet = new ethers.Wallet(pk, this.provider);
+      console.log("[LuffaSDK] Initialized mock wallet:", this.mockWallet.address);
+
+      // Faucet check: request seed Dummy ETH if balance is very low
+      const balance = await this.provider.getBalance(this.mockWallet.address);
+      if (balance < ethers.parseEther("0.05")) {
+        console.log("[LuffaSDK] Low balance! Requesting 10 Dummy ETH from Faucet...");
+        await fetch('http://localhost:3001/api/faucet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: this.mockWallet.address })
+        });
+        console.log("[LuffaSDK] Automatically Seeded with 10 Dummy ETH.");
+      }
+    } catch (e) {
+      console.warn("[LuffaSDK] Offline or failed to init wallet:", e);
+    }
   }
 
   async getWalletAddress(): Promise<string> {
     if (this.isLuffaEnvironment) {
       return await (window as any).Luffa.wallet.getAddress();
     }
-    console.warn("[LuffaSDK] Not in Luffa environment. Mocking wallet address.");
+    if (this.mockWallet) return this.mockWallet.address;
     return "0xMockUserAddress4bF9590B228B0f0";
   }
 
@@ -24,12 +69,40 @@ class LuffaSDKWrapper {
     if (this.isLuffaEnvironment) {
       return await (window as any).Luffa.wallet.signTransaction(tx);
     }
-    console.warn("[LuffaSDK] Mocking native transaction signature UI...");
+    
+    if (!this.mockWallet) {
+      throw new Error("Mock wallet not initialized. Is the local blockchain running?");
+    }
+
+    const txValue = ethers.parseEther(tx.value);
+    const balance = await this.provider.getBalance(this.mockWallet.address);
+
+    const formattedBalance = parseFloat(ethers.formatEther(balance));
+    
+    if (balance < txValue) {
+      alert(`Insufficient funds!\nYou have ${formattedBalance.toFixed(4)} ETH but need ${tx.value} ETH to post this task. Please wait for the dummy seeding to finish or restart the frontend.`);
+      throw new Error(`Insufficient funds: ${formattedBalance} ETH`);
+    }
+
     // Simulate native Luffa UI overlay delay for signing
     await new Promise(resolve => setTimeout(resolve, 800));
-    const confirmed = window.confirm(`[Mock Luffa Native UI]\nConfirm payment of ${tx.value} ETH to ${tx.to}?`);
+    
+    const confirmed = window.confirm(`[Mock Luffa Native UI]\nConfirm REAL payment of ${tx.value} ETH to ${tx.to}?\n\nWallet Balance: ${formattedBalance.toFixed(3)} ETH`);
     if (!confirmed) throw new Error("User rejected transaction in Luffa UI");
-    return `0xhash${Date.now()}`;
+
+    try {
+      const txResponse = await this.mockWallet.sendTransaction({
+        to: tx.to,
+        value: txValue,
+        data: tx.data
+      });
+      console.log("[LuffaSDK] Transaction broadcasted:", txResponse.hash);
+      await txResponse.wait();
+      return txResponse.hash;
+    } catch (e: any) {
+      console.error("Failed to execute on-chain transaction:", e);
+      throw new Error(`Transaction failed: ${e.message}`);
+    }
   }
 
   async getUserIdentity(): Promise<LuffaIdentity> {
@@ -44,3 +117,4 @@ class LuffaSDKWrapper {
 }
 
 export const LuffaSDK = new LuffaSDKWrapper();
+

@@ -16,12 +16,14 @@ export const Tasks = () => {
   const [budget, setBudget] = useState('0.05');
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployStep, setDeployStep] = useState(0); 
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if(!desc || !budget) return;
     setIsDeploying(true);
     setDeployStep(1); // Starting
+    setErrorMessage('');
     
     try {
       // Step 1
@@ -43,9 +45,11 @@ export const Tasks = () => {
         data: data 
       });
       
-      setDeployStep(3);
-      // Step 3
-      await postTask(desc, budget);
+      setDeployStep(3); // "Transaction confirmed. Routing Task to Network..."
+      
+      // Step 3 (Removed API call)
+      // The frontend now fully relies on the Hardhat local node's TaskPosted event
+      // passing the notification cleanly back through the websocket to orchestrate!
       
       setDeployStep(4); // Finished
       setTimeout(() => {
@@ -53,17 +57,25 @@ export const Tasks = () => {
         setDesc('');
         setIsDeploying(false);
         setDeployStep(0);
-      }, 1500);
+      }, 2500);
 
     } catch (err: any) {
       console.error(err);
+      
+      // Handle the 503 Backend/Blockchain connection error 
+      if (err.response && err.response.status === 503) {
+        setErrorMessage("Blockchain RPC Disconnected. Please ensure 'npm run node -w contracts' is running locally!");
+      } else {
+        setErrorMessage(err.message || 'Transaction failed or rejected.');
+      }
+      
       setDeployStep(-1); // Error
       setIsDeploying(false);
     }
   };
 
   const statusMessages: Record<number, string> = {
-    [-1]: 'Error deploying task. Try again.',
+    [-1]: errorMessage || 'Error deploying task. Try again.',
     0: '',
     1: 'Connecting to Luffa Wallet...',
     2: 'Awaiting Transaction Signature...',

@@ -78,6 +78,7 @@ chmod +x start.sh
    npm run dev -w frontend    # Starts Vite + Luffa React Dashboard
    ```
 6. **Seed Demo Data (For Presentations):**
+   Run the seeding script to populate the dashboard with realistic historic agent tasks, capabilities, and past transactions so the metrics page looks fantastic for judging.
    ```bash
    npm run seed
    ```
@@ -108,6 +109,10 @@ await LuffaSDK.signTransaction({
     ['data_analysis', 'python']   // Capabilities
   ]),
   value: '0.01' // Stake
+});
+```
+
+*(Note: If you want to build and run your own agent, check `packages/agents/examples/researchAgent.ts` and run it locally with `npm run demo:agent`!)*
 });
 ```
 
