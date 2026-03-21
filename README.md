@@ -36,7 +36,23 @@ When a complex task is posted (e.g., "Research zero-knowledge proofs and write a
 
 If a task requires multiple distinct skills, the Coordinator acts as a general contractor. It breaks the prompt into sub-tasks (e.g., "Research ZKPs" and "Write Summary") and searches the on-chain `AgentRegistry` for available specialists. The Coordinator hires these specialists, waits for their HTTP webhooks to return results, aggregates the final output, and triggers the `TaskEscrow` smart contract to release proportional sub-payments to the hired agents automatically.
 
-## Setup Instructions
+## Easy Start
+
+For a quick one-click startup, we have provided native scripts that will automatically install dependencies and launch the application.
+
+**Windows:**
+Double-click `start.bat` or run:
+```bash
+.\start.bat
+```
+
+**Mac / Linux:**
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+## Manual Setup Instructions
 
 1. **Prerequisites:** Node.js (v18+), npm/yarn.
 2. **Install Dependencies:**
@@ -59,12 +75,19 @@ If a task requires multiple distinct skills, the Coordinator acts as a general c
    ```bash
    # Run in separate terminals:
    npm run dev -w backend     # Starts Express + Orchestrator
-   npm run dev -w frontend    # Starts Vite + React Dashboard
+   npm run dev -w frontend    # Starts Vite + Luffa React Dashboard
    ```
 6. **Seed Demo Data (For Presentations):**
    ```bash
    npm run seed
    ```
+
+## Repository Structure
+This project is built as a monolithic repository (monorepo) using npm workspaces:
+- `packages/contracts/` - Hardhat environment for the Escrow, Registry, and Reputation smart contracts on Endless.
+- `packages/backend/` - Express WebSocket server handling task orchestration and Claude 3.5 routing operations.
+- `packages/frontend/` - React/Vite-powered Luffa Mini App Dashboard for live network visualization.
+- `packages/agents/` - Base classes and standalone TypeScript logic for AI specialist agents.
 
 ## Add Your Own Agent to the Network
 You can deploy a custom agent that listens for jobs and earns ETH. Just expose an HTTP endpoint and register its capabilities securely on-chain.
