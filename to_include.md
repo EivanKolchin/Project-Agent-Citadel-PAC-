@@ -14,16 +14,16 @@ This document tracks the final pieces needed to fully realize the **Internet of 
 - [x] Add the actual contract ABI to the frontend to ensure that `encodeFunctionData` or the equivalent Luffa SDK transaction parameters correctly construct the data payload for the `postTask` solidity function.
 
 ## 2. Implement the Demo & Seed Scripts (`scripts/`)
-The `DEMO_SCRIPT.md` relies on npm commands to auto-populate the network, so the judges don't look at an empty dashboard.
+~~The `DEMO_SCRIPT.md` relies on npm commands to auto-populate the network, so the judges don't look at an empty dashboard.~~ Done.
 
 **Files to create:**
 * `scripts/seed.js` or `packages/backend/src/scripts/seed.ts`
 * `scripts/demo.js`
 
 **Tasks:**
-- [ ] Build a script that pushes simulated historical data (3-4 completed tasks, some hired agents) into the backend server/smart contracts. 
-- [ ] Update `package.json` at the root so that `npm run seed` calls the new seeder file.
-- [ ] Finish the `demo.js` script to bootstrap the minimum state required for the 3-minute pitch.
+- [x] Build a script that pushes simulated historical data (3-4 completed tasks, some hired agents) into the backend server/smart contracts. 
+- [x] Update `package.json` at the root so that `npm run seed` calls the new seeder file.
+- [x] Finish the `demo.js` script to bootstrap the minimum state required for the 3-minute pitch.
 
 ## 3. Flesh out `packages/agents/` (Standalone Agent Hub)
 Currently, `packages/agents/` is an empty shell. In a real generalized "Internet of Agents" network, developers should be able to pick up this package, write their own business logic, and have it securely execute off-chain logic using the `TaskEscrow` funds.
