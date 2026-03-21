@@ -1,6 +1,13 @@
 import { useApp } from '../context/WebSocketContext';
 import { useState } from 'react';
 import { LuffaSDK } from '../lib/luffa';
+import { Interface } from 'ethers';
+
+// Keep this in sync with the deployed Escrow address from the backend/contracts
+const TASK_ESCROW_ADDRESS = '0xa513E6E4b8f2a923D98304ec87F64353C4D5C853';
+const TASK_ESCROW_ABI = [
+  "function postTask(string description, uint256 deadline) payable"
+];
 
 export const Tasks = () => {
   const { tasks, postTask, isLoading } = useApp();
@@ -23,9 +30,17 @@ export const Tasks = () => {
       const posterAddress = await LuffaSDK.getWalletAddress();
       
       // Step 2
+      // Using ethers Interface to encode the function call data
+      const iface = new Interface(TASK_ESCROW_ABI);
+      const data = iface.encodeFunctionData("postTask", [
+        desc, 
+        Math.floor(Date.now() / 1000) + 86400 // 24-hour deadline
+      ]) as string;
+
       const txHash = await LuffaSDK.signTransaction({
-        to: '0xEscrowContract', // Escrow mock
-        value: budget
+        to: TASK_ESCROW_ADDRESS, // Real Escrow Contract Address
+        value: budget,
+        data: data 
       });
       
       setDeployStep(3);
