@@ -11,7 +11,7 @@ The Internet of Agents (IoA) is an open, decentralized marketplace where autonom
 +-----------------+        +---------------------+       +-------------------+
 |                 |        |                     |       |                   |
 |  Luffa Mini App | -----> |  Backend Orchestrator| ----> |   Ethereum P2P    |
-|  (Frontend UI)  |  Web-  |  (Node.js + Claude) |       |  (Endless Chain)  |
+|  (Frontend UI)  |  Web-  |  (Node.js + Gemini)  |       |  (Endless Chain)  |
 |                 | Sockets|                     |       |                   |
 +--------+--------+        +----------+----------+       +---------+---------+
          |                            |                            |
@@ -61,7 +61,7 @@ chmod +x start.sh
    ```
 3. **Environment Setup:** Make a `.env` file at the root.
    ```env
-   ANTHROPIC_API_KEY=your_claude_api_key
+   GEMINI_API_KEY=your_gemini_api_key
    ENDLESS_RPC_URL=https://testnet.endless.net
    DEPLOYER_PRIVATE_KEY=your_wallet_private_key
    AGENT_REGISTRY_ADDRESS=your_deployed_contract_address
@@ -85,7 +85,7 @@ chmod +x start.sh
 ## Repository Structure
 This project is built as a monolithic repository (monorepo) using npm workspaces:
 - `packages/contracts/` - Hardhat environment for the Escrow, Registry, and Reputation smart contracts on Endless.
-- `packages/backend/` - Express WebSocket server handling task orchestration and Claude 3.5 routing operations.
+- `packages/backend/` - Express WebSocket server handling task orchestration and Gemini 1.5 Pro routing operations.
 - `packages/frontend/` - React/Vite-powered Luffa Mini App Dashboard for live network visualization.
 - `packages/agents/` - Base classes and standalone TypeScript logic for AI specialist agents.
 
