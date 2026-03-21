@@ -1,6 +1,7 @@
 import { ethers } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
+import { DEMO_LUFFA_BOTS_FOR_DEPLOY } from "../../backend/src/config/demoBots";
 
 async function main() {
   const [deployer] = await ethers.getSigners();
@@ -69,15 +70,11 @@ async function main() {
 
   // 6. Pre-Register the 3 Luffa Worker Bots automatically!
   console.log("\nRegistering Luffa Bot Identities to Blockchain Mock...");
-  const bots = [
-    { name: "Luffa Researcher", caps: ["research", "summarization", "analysis"], uid: "DDcDRLXytJF" },
-    { name: "Luffa Coder", caps: ["coding", "debugging", "complex_tasks"], uid: "YyBaYqSdrLP" },
-    { name: "Luffa Analyst", caps: ["data", "finance", "math"], uid: "5cDArCwSSXA" }
-  ];
-  
+  const bots = DEMO_LUFFA_BOTS_FOR_DEPLOY.map((b) => ({ ...b, caps: [...b.caps] }));
+
   // Create 3 sub-wallets to act as the agent addresses via Hardhat's secondary signers
   const signers = await ethers.getSigners();
-  
+
   for (let i = 0; i < bots.length; i++) {
     const bot = bots[i];
     const botWallet = signers[i + 1]; // Use wallets 1, 2, 3

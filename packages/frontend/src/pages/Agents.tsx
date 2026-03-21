@@ -2,21 +2,27 @@ import { useApp } from '../context/WebSocketContext';
 import { useState } from 'react';
 import { LuffaSDK } from '../lib/luffa';
 import { Interface } from 'ethers';
+import { useEthPrice } from '../hooks/useEthPrice';
 
-// To dynamically read from shared config, but let's sync here for UI standalone context
-const AGENT_REGISTRY_ADDRESS = '0x0165878A594ca255338adfa4d48449f69242Eb8F';
 const AGENT_REGISTRY_ABI = [
   "function registerAgent(string name, string description, string endpoint, string[] capabilities) payable"
 ];
 
 export const Agents = () => {
-  const { agents, isLoading } = useApp();
+  const { agents, isLoading, config } = useApp();
+  const { formatUsd } = useEthPrice();
   const [filter, setFilter] = useState('');
   const [regStatus, setRegStatus] = useState('');
 
   const filtered = agents.filter(a => !filter || a.capabilities.some((c: string) => c.toLowerCase().includes(filter.toLowerCase())));
 
   const handleRegister = async () => {
+    if (!config.AGENT_REGISTRY_ADDRESS) {
+      setRegStatus('Error: Contracts not loaded. Is the backend running?');
+      setTimeout(() => setRegStatus(''), 3000);
+      return;
+    }
+
     try {
       setRegStatus('Authenticating Luffa Identity...');
       const identity = await LuffaSDK.getUserIdentity();
@@ -24,7 +30,7 @@ export const Agents = () => {
       setRegStatus(`Getting Wallet for ${identity.username}...`);
       const address = await LuffaSDK.getWalletAddress();
       
-      setRegStatus('Please sign 0.01 ETH staking provision.');
+      setRegStatus(`Please sign 0.01 ETH (${formatUsd(0.01)}) staking provision.`);
       
       const iface = new Interface(AGENT_REGISTRY_ABI);
       const data = iface.encodeFunctionData("registerAgent", [
@@ -35,7 +41,7 @@ export const Agents = () => {
       ]);
 
       await LuffaSDK.signTransaction({ 
-        to: AGENT_REGISTRY_ADDRESS, 
+        to: config.AGENT_REGISTRY_ADDRESS, 
         value: '0.01',
         data: data
       });
@@ -49,11 +55,11 @@ export const Agents = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-6">
+    <div className="space-y-8 animate-fade-in pb-10">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-white/5 pb-6">
         <div className="flex-1">
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-1">Agent Roster</h1>
-          <p className="text-slate-400 text-sm">Specialists currently online and accepting tasks.</p>
+          <h1 className="text-3xl font-light tracking-tight text-white mb-1">Agent Roster</h1>
+          <p className="text-zinc-400 text-sm">Specialists currently online and accepting tasks.</p>
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <input 
@@ -61,18 +67,18 @@ export const Agents = () => {
             placeholder="Filter capability..." 
             value={filter}
             onChange={e => setFilter(e.target.value)}
-            className="px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-sm focus:outline-none focus:border-indigo-500 text-white placeholder-slate-500 w-full sm:w-48 transition-all"
+            className="px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-white/30 text-white placeholder-zinc-500 w-full sm:w-56 transition-all"
           />
           <button 
             onClick={handleRegister}
-            className="whitespace-nowrap px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-sm font-semibold text-white transition-all shadow-sm"
+            className="whitespace-nowrap px-6 py-2.5 bg-white text-black hover:bg-zinc-200 rounded-xl text-sm font-semibold transition-all shadow-lg"
           >
             {regStatus ? 'Wait...' : 'Register Luffa Agent'}
           </button>
         </div>
       </div>
       {regStatus && (
-        <div className="bg-indigo-900/30 border border-indigo-500/50 text-indigo-300 px-4 py-3 rounded-xl text-sm animate-pulse">
+        <div className="bg-white/10 border border-white/20 text-white backdrop-blur-md px-5 py-3 rounded-xl text-sm animate-pulse shadow-xl">
           {regStatus}
         </div>
       )}
@@ -80,57 +86,57 @@ export const Agents = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {isLoading ? (
           [1,2,3].map(i => (
-            <div key={i} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col animate-pulse">
+            <div key={i} className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl flex flex-col animate-pulse">
               <div className="flex justify-between items-start mb-3">
                 <div className="w-1/2">
-                  <div className="h-5 bg-slate-800 rounded w-full mb-2"></div>
-                  <div className="h-3 bg-slate-800 rounded w-2/3"></div>
+                  <div className="h-5 bg-white/5 rounded w-full mb-2"></div>
+                  <div className="h-3 bg-white/5 rounded w-2/3"></div>
                 </div>
-                <div className="h-4 w-12 bg-slate-800 rounded-md"></div>
+                <div className="h-4 w-12 bg-white/5 rounded-full"></div>
               </div>
-              <div className="h-10 bg-slate-800 rounded w-full mt-2"></div>
+              <div className="h-10 bg-white/5 rounded w-full mt-2"></div>
               <div className="mt-5 flex gap-2">
-                <div className="h-5 w-16 bg-slate-800 rounded-md"></div>
-                <div className="h-5 w-20 bg-slate-800 rounded-md"></div>
+                <div className="h-5 w-16 bg-white/5 rounded-full"></div>
+                <div className="h-5 w-20 bg-white/5 rounded-full"></div>
               </div>
               <div className="mt-auto pt-6">
-                <div className="h-2 bg-slate-800 rounded-full w-full"></div>
+                <div className="h-2 bg-white/5 rounded-full w-full"></div>
               </div>
             </div>
           ))
         ) : filtered.map(agent => (
-          <div key={agent.address} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col hover:border-indigo-500/50 hover:bg-slate-800/20 transition-all cursor-crosshair">
+          <div key={agent.address} className="bg-zinc-900/40 border border-white/5 backdrop-blur-md p-6 rounded-2xl flex flex-col hover:border-white/10 hover:bg-zinc-800/40 transition-all cursor-crosshair group">
             <div className="flex justify-between items-start mb-3">
               <div>
-                <h3 className="font-bold text-lg text-slate-100">{agent.name}</h3>
-                <p className="text-xs font-mono text-slate-500 mt-1">{agent.address.slice(0, 6)}...{agent.address.slice(-4)}</p>
+                <h3 className="font-medium text-lg text-white group-hover:text-zinc-200 transition-colors">{agent.name}</h3>
+                <p className="text-xs font-mono text-zinc-500 mt-1">{agent.address.slice(0, 6)}...{agent.address.slice(-4)}</p>
               </div>
-              <span className={`text-[10px] px-2.5 py-1 rounded-md uppercase font-bold tracking-wider ${agent.currentStatus === 'offline' ? 'bg-red-500/20 text-red-400' : agent.currentStatus === 'idle' ? 'bg-slate-800 text-slate-400' : 'bg-green-500/20 text-green-400'}`}>
+              <span className={`text-[9px] px-2 py-0.5 rounded-full border uppercase font-semibold tracking-wider ${agent.currentStatus === 'offline' ? 'bg-red-500/10 text-red-500 border-red-500/20' : agent.currentStatus === 'idle' ? 'bg-zinc-800 text-zinc-400 border-zinc-700' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
                 {agent.currentStatus || 'idle'}
               </span>
             </div>
             
-            <p className="text-sm text-slate-400 leading-relaxed line-clamp-2">{agent.description}</p>
+            <p className="text-sm text-zinc-400 font-light leading-relaxed line-clamp-2 mt-1">{agent.description}</p>
             
             <div className="mt-5 flex flex-wrap gap-2">
               {agent.capabilities.map((c: string) => (
-                <span key={c} className="text-[10px] bg-slate-950 font-medium text-indigo-300 border border-indigo-500/20 px-2 py-1 rounded-md">{c}</span>
+                <span key={c} className="text-[10px] bg-white/5 font-medium text-white border border-white/10 px-2.5 py-1 rounded-full">{c}</span>
               ))}
             </div>
             
             <div className="mt-auto pt-6">
               <div className="flex justify-between text-xs mb-2">
-                <span className="text-slate-400 font-medium">Reputation Score</span>
-                <span className="text-indigo-400 font-bold">{agent.reputationScore}</span>
+                <span className="text-zinc-500 font-medium">Reputation / Oracle</span>
+                <span className="text-white font-medium">{agent.reputationScore} / {(agent as any).oracleScore || 0}</span>
               </div>
-              <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800/50">
-                <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${Math.min(100, agent.reputationScore)}%` }} />
+              <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden border border-white/5">
+                <div className="bg-white h-full rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)]" style={{ width: `${Math.min(100, agent.reputationScore)}%` }} />
               </div>
-              <p className="text-right text-[10px] text-slate-500 mt-2">{agent.tasksCompleted} Tasks Completed</p>
+              <p className="text-right text-[10px] text-zinc-600 mt-2 font-mono uppercase tracking-widest">{agent.tasksCompleted} Tasks Completed</p>
             </div>
           </div>
         ))}
-        {!isLoading && filtered.length === 0 && <p className="text-slate-500 col-span-full">No agents found matching capabilities.</p>}
+        {!isLoading && filtered.length === 0 && <p className="text-zinc-500 col-span-full font-light text-center py-10">No agents found matching capabilities.</p>}
       </div>
     </div>
   );

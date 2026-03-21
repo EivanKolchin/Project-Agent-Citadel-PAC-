@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 import http from "http";
 import axios from "axios";
 import { EventEmitter } from "events";
@@ -50,6 +50,8 @@ try {
 const activityLog: any[] = [];
 const tasksDb: Record<string, any> = {};
 const agentStatusCache: Record<string, "active" | "offline" | "busy"> = {};
+/** Prevents duplicate orchestrator runs when both API and chain emit `task:posted`. */
+const orchestratorStartedForTask = new Set<string>();
 
 // Agent Health Polling Loop
 const pollAgentHealth = async () => {
@@ -78,19 +80,48 @@ setTimeout(pollAgentHealth, 5000);
 const broadcast = (type: string, payload: any) => {
   const message = JSON.stringify({ type, ...payload });
   wss.clients.forEach(client => {
-    if (client.readyState === 1) { // WebSocket.OPEN
+    if (client.readyState === WebSocket.OPEN) {
       client.send(message);
     }
   });
 };
+
+wss.on("connection", (ws) => {
+  try {
+    const events = activityLog.slice(0, 30);
+    ws.send(JSON.stringify({ type: "history", events }));
+  } catch (e) {
+    console.warn("[WS] Failed to send history:", e);
+  }
+});
+
+setInterval(() => {
+  const msg = JSON.stringify({ type: "ping", t: Date.now() });
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) client.send(msg);
+  });
+}, 30000);
 
 // --- Luffa Bot Execution Endpoints ---
 app.post("/api/luffa/:uid/execute", async (req, res) => {
   const { uid } = req.params;
   const { taskId, description } = req.body;
   
-  const botConfig = LUFFA_BOTS.find(b => b.uid === uid);
-  if (!botConfig) return res.status(404).json({ error: "Luffa Bot not found" });
+  let botConfig = LUFFA_BOTS.find(b => b.uid === uid);
+  
+  // Provide a generic fallback for frontend-registered agents
+  if (!botConfig) {
+    if (uid === "luffa_dev_123" || uid.startsWith("frontend")) {
+      botConfig = {
+        uid,
+        secret: "dev",
+        name: `Dynamic Agent ${uid}`,
+        capabilities: ["general", "chat"]
+      };
+    } else {
+      return res.status(404).json({ error: "Luffa Bot not found" });
+    }
+  }
 
   try {
     const result = await luffaWorker.executeTask(botConfig, taskId, description);
@@ -117,19 +148,26 @@ eventEmitter.on("task:posted", (payload) => {
     tasksDb[payload.taskId] = { id: payload.taskId, description: payload.description, bounty: payload.bounty, status: "open", createdAt: Date.now() };
   }
   broadcast("task:posted", { task: tasksDb[payload.taskId] });
-  
-  if (orchestrator) {
-     orchestrator.handleNewTask(payload.taskId, payload.description, payload.bounty)
-       .catch(e => console.error("Orchestrator failed:", e));
+
+  if (orchestrator && !orchestratorStartedForTask.has(payload.taskId)) {
+    orchestratorStartedForTask.add(payload.taskId);
+    orchestrator
+      .handleNewTask(payload.taskId, payload.description, payload.bounty)
+      .catch((e) => console.error("Orchestrator failed:", e));
   }
 });
 
-eventEmitter.on("task:assigned", (payload) => {
+eventEmitter.on("task:assigned", (payload: any) => {
   if (tasksDb[payload.taskId]) {
     tasksDb[payload.taskId].status = "assigned";
-    tasksDb[payload.taskId].assignedAgent = payload.agentName;
+    if (payload.agentAddress) {
+      tasksDb[payload.taskId].assignedAgent = payload.agentAddress;
+    }
+    if (payload.agentName) {
+      tasksDb[payload.taskId].assignedAgentName = payload.agentName;
+    }
   }
-  broadcast("task:assigned", payload);
+  broadcast("task:assigned", { ...payload, task: tasksDb[payload.taskId] });
 });
 
 eventEmitter.on("task:completed", (payload) => {
@@ -138,6 +176,11 @@ eventEmitter.on("task:completed", (payload) => {
     tasksDb[payload.taskId].result = payload.result;
   }
   broadcast("task:completed", payload);
+});
+
+eventEmitter.on("agent:registered", (payload) => {
+  broadcast("agent:registered", payload);
+  eventEmitter.emit("activity", { type: "system", message: `New Agent Registered: ${payload.name}` });
 });
 
 eventEmitter.on("payment:sent", (payload) => broadcast("payment:sent", payload));
@@ -197,10 +240,13 @@ app.post("/api/tasks", async (req, res) => {
   
   try {
     const taskId = await blockchain.postTask(description, budgetEth);
-    // Do NOT manually add to tasksDb or start orchestrator here. 
-    // The task:posted blockchain event listener will handle it!
-    
-    res.json({ taskId, message: "Task posted to chain. Orchestrator will be triggered by on-chain event." });
+    // Ensures orchestrator runs even when ENABLE_CHAIN_EVENTS is false (no WS subscription).
+    eventEmitter.emit("task:posted", { taskId, description, bounty: budgetEth });
+
+    res.json({
+      taskId,
+      message: "Task posted to chain. Orchestrator started (or deduped if chain events also fired).",
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -213,6 +259,15 @@ app.get("/api/tasks/:id", async (req, res) => {
   
   const reasoningTrace = router.getRecentDecisions().find(d => d.taskId === id);
   res.json({ ...task, routingDecision: reasoningTrace });
+});
+
+import { AGENT_REGISTRY_ADDRESS, TASK_ESCROW_ADDRESS } from "./config/contracts";
+
+app.get("/api/config", (req, res) => {
+  res.json({
+    AGENT_REGISTRY_ADDRESS,
+    TASK_ESCROW_ADDRESS
+  });
 });
 
 app.get("/api/stats", async (req, res) => {

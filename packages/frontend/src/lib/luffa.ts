@@ -40,21 +40,20 @@ class LuffaSDKWrapper {
       }
       this.mockWallet = new ethers.Wallet(pk, this.provider);
       console.log("[LuffaSDK] Initialized mock wallet:", this.mockWallet.address);
-
-      // Faucet check: request seed Dummy ETH if balance is very low
-      const balance = await this.provider.getBalance(this.mockWallet.address);
-      if (balance < ethers.parseEther("0.05")) {
-        console.log("[LuffaSDK] Low balance! Requesting 10 Dummy ETH from Faucet...");
-        await fetch('http://localhost:3001/api/faucet', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ address: this.mockWallet.address })
-        });
-        console.log("[LuffaSDK] Automatically Seeded with 10 Dummy ETH.");
-      }
     } catch (e) {
       console.warn("[LuffaSDK] Offline or failed to init wallet:", e);
     }
+  }
+
+  public async requestFaucetFunds(address: string) {
+    console.log(`[LuffaSDK] Requesting 10 Dummy ETH from Faucet for ${address}...`);
+    const res = await fetch('http://localhost:3001/api/faucet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address })
+    });
+    if (!res.ok) throw new Error("Failed to fund address");
+    return true;
   }
 
   async getWalletAddress(): Promise<string> {

@@ -2,25 +2,50 @@ import { useApp } from '../context/WebSocketContext';
 import { useState } from 'react';
 import { LuffaSDK } from '../lib/luffa';
 import { Interface } from 'ethers';
+import { useEthPrice } from '../hooks/useEthPrice';
 
-// Keep this in sync with the deployed Escrow address from the backend/contracts
-const TASK_ESCROW_ADDRESS = '0xa513E6E4b8f2a923D98304ec87F64353C4D5C853';
 const TASK_ESCROW_ABI = [
   "function postTask(string description, uint256 deadline) payable"
 ];
 
+function formatAssignee(t: any): string {
+  const addr = t.assignedAgent;
+  if (typeof addr === 'string' && addr.startsWith('0x') && addr.length >= 10) {
+    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+  }
+  if (t.assignedAgentName) return t.assignedAgentName;
+  if (addr) return String(addr);
+  return 'Waiting...';
+}
+
 export const Tasks = () => {
-  const { tasks, postTask, isLoading } = useApp();
+  const { tasks, agents, isLoading, config } = useApp();
+  const { formatUsd } = useEthPrice();
   const [isModalOpen, setModalOpen] = useState(false);
   const [desc, setDesc] = useState('');
   const [budget, setBudget] = useState('0.05');
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployStep, setDeployStep] = useState(0); 
   const [errorMessage, setErrorMessage] = useState('');
+  
+  // Routing preferences
+  const [routingMode, setRoutingMode] = useState<'auto' | 'manual'>('auto');
+  const [selectedAgent, setSelectedAgent] = useState<string>('');
+  const [agentSearch, setAgentSearch] = useState('');
+
+  const filteredAgents = agents.filter(a => 
+    a.name.toLowerCase().includes(agentSearch.toLowerCase()) || 
+    a.capabilities.some((c: string) => c.toLowerCase().includes(agentSearch.toLowerCase()))
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if(!desc || !budget) return;
+    if(routingMode === 'manual' && !selectedAgent) {
+      setErrorMessage("Please select an agent for manual routing.");
+      return;
+    }
+    
     setIsDeploying(true);
     setDeployStep(1); // Starting
     setErrorMessage('');
@@ -29,18 +54,20 @@ export const Tasks = () => {
       // Step 1
       await new Promise(r => setTimeout(r, 500));
       setDeployStep(2);
-      const posterAddress = await LuffaSDK.getWalletAddress();
       
+      const finalizeDesc = routingMode === 'manual' ? `[TARGET:${selectedAgent}] ${desc}` : desc;
+
       // Step 2
       // Using ethers Interface to encode the function call data
+      if (!config.TASK_ESCROW_ADDRESS) throw new Error("Smart Contracts not synced. Ensure backend node is running.");
       const iface = new Interface(TASK_ESCROW_ABI);
       const data = iface.encodeFunctionData("postTask", [
-        desc, 
+        finalizeDesc, 
         Math.floor(Date.now() / 1000) + 86400 // 24-hour deadline
       ]) as string;
 
       const txHash = await LuffaSDK.signTransaction({
-        to: TASK_ESCROW_ADDRESS, // Real Escrow Contract Address
+        to: config.TASK_ESCROW_ADDRESS, // Real Escrow Contract Address
         value: budget,
         data: data 
       });
@@ -55,6 +82,8 @@ export const Tasks = () => {
       setTimeout(() => {
         setModalOpen(false);
         setDesc('');
+        setRoutingMode('auto');
+        setSelectedAgent('');
         setIsDeploying(false);
         setDeployStep(0);
       }, 2500);
@@ -92,84 +121,136 @@ export const Tasks = () => {
         </div>
         <button 
           onClick={() => setModalOpen(true)}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-600/20"
+          className="bg-white text-black hover:bg-zinc-200 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg"
         >
           Post Task
         </button>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+      <div className="bg-zinc-900/40 border border-white/5 backdrop-blur-md rounded-2xl overflow-hidden shadow-2xl">
         <table className="w-full text-left border-collapse text-sm">
           <thead>
-            <tr className="border-b border-slate-800 bg-slate-900/50 text-slate-400">
-              <th className="p-5 font-semibold">Task</th>
-              <th className="p-5 font-semibold">Bounty (ETH)</th>
-              <th className="p-5 font-semibold">Status</th>
-              <th className="p-5 font-semibold hidden sm:table-cell">Assigned Agent</th>
+            <tr className="border-b border-white/5 text-zinc-400">
+              <th className="p-5 font-medium tracking-wide">Task</th>
+              <th className="p-5 font-medium tracking-wide">Bounty (ETH)</th>
+              <th className="p-5 font-medium tracking-wide">Status</th>
+              <th className="p-5 font-medium tracking-wide hidden sm:table-cell">Assigned Agent</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/80">
+          <tbody className="divide-y divide-white/5">
             {isLoading ? (
               [1,2,3].map(i => (
-                <tr key={i} className="animate-pulse bg-slate-800/20">
-                  <td className="p-5"><div className="h-4 bg-slate-700/50 rounded w-3/4 mb-2"></div><div className="h-3 bg-slate-700/50 rounded w-1/4"></div></td>
-                  <td className="p-5"><div className="h-4 bg-slate-700/50 rounded w-16"></div></td>
-                  <td className="p-5"><div className="h-6 bg-slate-700/50 rounded w-20"></div></td>
-                  <td className="p-5 hidden sm:table-cell"><div className="h-4 bg-slate-700/50 rounded w-24"></div></td>
+                <tr key={i} className="animate-pulse bg-white/[0.01]">
+                  <td className="p-5"><div className="h-4 bg-white/5 rounded w-3/4 mb-2"></div><div className="h-3 bg-white/5 rounded w-1/4"></div></td>
+                  <td className="p-5"><div className="h-4 bg-white/5 rounded w-16"></div></td>
+                  <td className="p-5"><div className="h-6 bg-white/5 rounded w-20"></div></td>
+                  <td className="p-5 hidden sm:table-cell"><div className="h-4 bg-white/5 rounded w-24"></div></td>
                 </tr>
               ))
             ) : tasks.map((t, i) => (
-              <tr key={t.id || i} className="hover:bg-slate-800/40 transition-colors cursor-pointer group">
+              <tr key={t.id || i} className="hover:bg-white/[0.02] transition-colors cursor-pointer group">
                 <td className="p-5">
-                  <p className="text-slate-200 font-medium line-clamp-1 max-w-[300px]">{t.description}</p>
-                  <span className="text-[10px] text-slate-500 font-mono mt-1 block">ID: {t.id}</span>
+                  <p className="text-zinc-200 font-medium line-clamp-1 max-w-[300px]">{t.description}</p>
+                  <span className="text-[10px] text-zinc-500 font-mono mt-1 block">ID: {t.id}</span>
                 </td>
-                <td className="p-5 text-indigo-300 font-bold">{t.bounty}</td>
+                <td className="p-5 text-white font-light">
+                  {t.bounty} 
+                  <span className="block text-[10px] text-zinc-500 mt-0.5">{formatUsd(t.bounty)}</span>
+                </td>
                 <td className="p-5">
-                  <span className={`text-[10px] px-2.5 py-1 rounded-md uppercase tracking-wide font-bold 
-                    ${t.status === 'open' ? 'bg-amber-500/20 text-amber-400' : 
-                      t.status === 'assigned' ? 'bg-blue-500/20 text-blue-400' : 
-                      'bg-emerald-500/20 text-emerald-400'}`}>
+                  <span className={`text-[10px] px-2.5 py-1 rounded-full border uppercase tracking-wider font-semibold 
+                    ${t.status === 'open' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 
+                      t.status === 'assigned' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
+                      'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
                     {t.status}
                   </span>
                 </td>
-                <td className="p-5 text-slate-400 text-xs hidden sm:table-cell font-mono">
-                  {t.assignedAgent ? `${t.assignedAgent.slice(0,6)}...${t.assignedAgent.slice(-4)}` : 'Waiting...'}
+                <td className="p-5 text-zinc-400 text-xs hidden sm:table-cell font-mono">
+                  {formatAssignee(t)}
                 </td>
               </tr>
             ))}
-            {!isLoading && tasks.length === 0 && <tr><td colSpan={4} className="p-10 text-center text-slate-500">The escrow ledger is empty.</td></tr>}
+            {!isLoading && tasks.length === 0 && <tr><td colSpan={4} className="p-10 text-center text-zinc-500 font-light">The escrow ledger is empty.</td></tr>}
           </tbody>
         </table>
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl w-full max-w-lg shadow-2xl">
-            <h2 className="text-2xl font-bold text-white mb-2">Deploy a Task</h2>
-            <p className="text-slate-400 text-sm mb-6">Your task will be routed to the best specialist agent automatically.</p>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+          <div className="bg-zinc-950 border border-white/10 p-8 rounded-3xl w-full max-w-lg shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+            <h2 className="text-2xl font-light text-white mb-2">Deploy a Task</h2>
+            <p className="text-zinc-400 text-sm mb-6">Your task will be routed to the best specialist agent automatically or assigned manually.</p>
             
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} className="space-y-6">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wide">Task Description</label>
+                <label className="block text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wide">Task Description</label>
                 <textarea 
                   value={desc} 
                   onChange={e => setDesc(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-zinc-200 focus:outline-none focus:border-white/30 focus:bg-white/10 transition-all placeholder:text-zinc-600"
                   rows={4}
                   placeholder="E.g., Research recent advancements in zero-knowledge proofs and write a technical summary."
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wide">Bounty In ETH</label>
+                <div className="flex justify-between items-end mb-2">
+                  <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wide">Bounty In ETH</label>
+                  <span className="text-xs text-zinc-500 font-mono transition-colors">{formatUsd(budget)}</span>
+                </div>
                 <div className="relative">
                   <input 
                     type="number" step="0.01" value={budget} onChange={e => setBudget(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 pl-12 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-4 pl-12 text-sm text-white focus:outline-none focus:border-white/30 focus:bg-white/10 transition-all"
                   />
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">Ξ</span>
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-light">Ξ</span>
                 </div>
               </div>
+
+              {/* Assignment Method */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wide">Task Assignment</label>
+                <div className="flex gap-2 mb-4 bg-white/5 p-1 rounded-xl">
+                  <button type="button" onClick={() => setRoutingMode('auto')} className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${routingMode === 'auto' ? 'bg-white text-black shadow-md' : 'text-zinc-400 hover:text-white'}`}>
+                    AI Auto-Route
+                  </button>
+                  <button type="button" onClick={() => setRoutingMode('manual')} className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${routingMode === 'manual' ? 'bg-white text-black shadow-md' : 'text-zinc-400 hover:text-white'}`}>
+                    Choose Manual
+                  </button>
+                </div>
+                
+                {routingMode === 'manual' && (
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+                    <input 
+                      type="text" 
+                      placeholder="Search agents by name or capability..." 
+                      value={agentSearch}
+                      onChange={e => setAgentSearch(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-white placeholder-slate-500"
+                    />
+                    <div className="max-h-[160px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                      {filteredAgents.length === 0 ? (
+                        <p className="text-xs text-slate-500 text-center py-2">No agents found.</p>
+                      ) : (
+                        filteredAgents.map(a => (
+                          <div 
+                            key={a.address}
+                            onClick={() => setSelectedAgent(a.address)}
+                            className={`p-3 rounded-lg border cursor-pointer transition-colors flex justify-between items-center ${selectedAgent === a.address ? 'bg-indigo-900/30 border-indigo-500' : 'bg-slate-900 border-slate-800 hover:border-slate-600'}`}
+                          >
+                            <div className="overflow-hidden">
+                              <p className="text-sm font-semibold text-slate-200 truncate">{a.name}</p>
+                              <p className="text-[10px] text-slate-500 mt-1 uppercase truncate">{a.capabilities.slice(0, 3).join(', ')}</p>
+                            </div>
+                            <div className={`w-4 h-4 rounded-full border-2 shrink-0 ml-2 ${selectedAgent === a.address ? 'border-indigo-400 bg-indigo-500' : 'border-slate-600'}`} />
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="flex gap-3 justify-end mt-8 pt-4 border-t border-slate-800 items-center">
                 {deployStep !== 0 && (
                   <span className={`text-xs font-medium mr-auto ${deployStep === -1 ? 'text-red-400' : 'text-indigo-400 animate-pulse'}`}>

@@ -6,6 +6,7 @@ interface AppState {
   activity: any[];
   agents: any[];
   tasks: any[];
+  config: { AGENT_REGISTRY_ADDRESS?: string, TASK_ESCROW_ADDRESS?: string };
   isConnected: boolean;
   isLoading: boolean;
   postTask: (desc: string, budget: string) => Promise<void>;
@@ -20,6 +21,7 @@ export const AppProvider = ({ children }: any) => {
   const [activity, setActivity] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
+  const [config, setConfig] = useState({});
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
@@ -28,16 +30,18 @@ export const AppProvider = ({ children }: any) => {
     const fetchInitial = async () => {
       setIsLoading(true);
       try {
-        const [statsRes, activityRes, agentsRes, tasksRes] = await Promise.all([
+        const [statsRes, activityRes, agentsRes, tasksRes, configRes] = await Promise.all([
           axios.get(`${apiBase}/api/stats`).catch(() => ({ data: stats })),
           axios.get(`${apiBase}/api/activity`).catch(() => ({ data: [] })),
           axios.get(`${apiBase}/api/agents`).catch(() => ({ data: [] })),
-          axios.get(`${apiBase}/api/tasks`).catch(() => ({ data: [] }))
+          axios.get(`${apiBase}/api/tasks`).catch(() => ({ data: [] })),
+          axios.get(`${apiBase}/api/config`).catch(() => ({ data: {} }))
         ]);
         setStats(statsRes.data);
         setActivity(activityRes.data);
         setAgents(agentsRes.data);
         setTasks(tasksRes.data);
+        setConfig(configRes.data);
       } finally {
         setIsLoading(false);
       }
@@ -70,17 +74,27 @@ export const AppProvider = ({ children }: any) => {
         if (data.type === 'ping') {
           ws.send(JSON.stringify({ type: 'pong' }));
         }
+        if (data.type === 'agent:registered') {
+          axios.get(`${apiBase}/api/agents`).then(r => setAgents(r.data)).catch(() => undefined);
+        }
         if (['task:posted', 'task:assigned', 'task:completed', 'task:failed'].includes(data.type)) {
           setTasks(prev => {
-            const taskObj = data.task || data; 
-            const existingIndex = prev.findIndex(t => t.id === taskObj.taskId || t.id === taskObj.id);
-            
+            const taskObj = data.task || data;
+            const id = taskObj.id ?? taskObj.taskId;
+            const existingIndex = prev.findIndex(t => t.id === id);
+            const patch: any = { ...taskObj, id };
+            if (data.type === 'task:assigned' && data.agentAddress) {
+              patch.assignedAgent = data.agentAddress;
+            }
+            if (data.type === 'task:assigned' && data.agentName) {
+              patch.assignedAgentName = data.agentName;
+            }
             if (existingIndex >= 0) {
               const next = [...prev];
-              next[existingIndex] = { ...next[existingIndex], ...taskObj };
+              next[existingIndex] = { ...next[existingIndex], ...patch };
               return next;
             }
-            return [taskObj, ...prev];
+            return [patch, ...prev];
           });
           axios.get(`${apiBase}/api/stats`).then(r => setStats(r.data)).catch(() => undefined);
         }
@@ -107,7 +121,7 @@ export const AppProvider = ({ children }: any) => {
   };
 
   return (
-    <WSContext.Provider value={{ stats, activity, agents, tasks, isConnected, isLoading, postTask }}>
+    <WSContext.Provider value={{ stats, activity, agents, tasks, config, isConnected, isLoading, postTask }}>
       {children}
     </WSContext.Provider>
   );

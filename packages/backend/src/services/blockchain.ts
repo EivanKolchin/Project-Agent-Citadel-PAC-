@@ -90,10 +90,20 @@ export class BlockchainService {
         });
       });
 
-      this.taskEscrow.on("TaskAssigned", (taskId, agentAddress, event) => {
+      this.taskEscrow.on("TaskAssigned", async (taskId, agentAddress, event) => {
+        let agentName = "Unknown Agent";
+        try {
+          if (this.agentRegistry) {
+            const currentAgents = await this.agentRegistry.getAllAgents();
+            const found = currentAgents.find((a: any) => a.wallet.toLowerCase() === agentAddress.toLowerCase());
+            if (found) agentName = found.name;
+          }
+        } catch(e) { /* ignore */ }
+        
         this.eventEmitter.emit("task:assigned", {
           taskId: taskId.toString(),
           agentAddress,
+          agentName,
           txHash: event.log.transactionHash
         });
       });
@@ -124,16 +134,25 @@ export class BlockchainService {
 
     const agentsData = await this.withTimeout(this.agentRegistry.getAllAgents());
     
-    const parsedAgents: Agent[] = agentsData.map((a: any) => ({
-      address: a.wallet,
-      name: a.name,
-      description: a.description,
-      endpoint: a.endpoint,
-      capabilities: Array.from(a.capabilities),
-      reputationScore: Number(a.reputationScore || 0),
-      tasksCompleted: Number(a.tasksCompleted || 0),
-      stakedAmount: ethers.formatEther(a.stakedAmount || 0),
-      active: a.active
+    const parsedAgents: Agent[] = await Promise.all(agentsData.map(async (a: any) => {
+      let oracleScore = 0;
+      if (REPUTATION_ORACLE_ADDRESS) {
+        try {
+          oracleScore = Number(await this.reputationOracle.getScore(a.wallet));
+        } catch (e) { /* ignore if not available */ }
+      }
+      return {
+        address: a.wallet,
+        name: a.name,
+        description: a.description,
+        endpoint: a.endpoint,
+        capabilities: Array.from(a.capabilities),
+        reputationScore: Number(a.reputationScore || 0),
+        oracleScore,
+        tasksCompleted: Number(a.tasksCompleted || 0),
+        stakedAmount: ethers.formatEther(a.stakedAmount || 0),
+        active: a.active
+      };
     }));
 
     return parsedAgents.filter(a => a.active);

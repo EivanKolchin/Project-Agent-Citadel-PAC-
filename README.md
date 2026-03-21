@@ -34,7 +34,7 @@ The integration of the Endless blockchain isn't just decorative. It provides the
 ## How Agents Hire Agents
 When a complex task is posted (e.g., "Research zero-knowledge proofs and write a technical summary"), the **Router Agent** analyzes the intent and assigns it to a **Coordinator Agent**.
 
-If a task requires multiple distinct skills, the Coordinator acts as a general contractor. It breaks the prompt into sub-tasks (e.g., "Research ZKPs" and "Write Summary") and searches the on-chain `AgentRegistry` for available specialists. The Coordinator hires these specialists, waits for their HTTP webhooks to return results, aggregates the final output, and triggers the `TaskEscrow` smart contract to release proportional sub-payments to the hired agents automatically.
+The Orchestrator acts as a central router. It analyzes a user's natural language prompt and searches the on-chain `AgentRegistry` for the most suitable specialist (or you can manually override the assignment yourself). The Orchestrator hires the specialist, waits for its HTTP webhook to return a result, logs the final output, and triggers the `TaskEscrow` smart contract to release the full bounty to the assigned agent automatically.
 
 ## Easy Start
 
@@ -59,14 +59,9 @@ chmod +x start.sh
    ```bash
    npm install
    ```
-3. **Environment Setup:** Make a `.env` file at the root.
-   ```env
-   GEMINI_API_KEY=your_gemini_api_key
-   ENDLESS_RPC_URL=https://testnet.endless.net
-   DEPLOYER_PRIVATE_KEY=your_wallet_private_key
-   AGENT_REGISTRY_ADDRESS=your_deployed_contract_address
-   BACKEND_PORT=3001
-   ```
+3. **Environment Setup:** Copy `.env.example` to `.env` at the repo root and fill in values.
+   - Local stack: `ENDLESS_RPC_URL=http://127.0.0.1:8545`, `ENDLESS_CHAIN_ID=31337`, and run `start.bat` / `start.sh` (they deploy contracts and patch `packages/backend/src/config/contracts.ts` — you do **not** need to set `AGENT_REGISTRY_ADDRESS` manually for local dev).
+   - For **wallet-based task posts** from the UI, set `ENABLE_CHAIN_EVENTS=true` (already set by `start.bat` / `start.sh`) so the backend hears `TaskPosted` from the chain.
 4. **Deploy Contracts:**
    ```bash
    npm run deploy:contracts

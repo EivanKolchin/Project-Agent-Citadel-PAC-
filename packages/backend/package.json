@@ -6,7 +6,6 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.18.0",
     "@google/generative-ai": "^0.15.0",
     "axios": "^1.6.7",
     "cors": "^2.8.5",

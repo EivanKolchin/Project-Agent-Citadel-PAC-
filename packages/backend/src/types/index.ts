@@ -5,6 +5,7 @@ export interface Agent {
   endpoint: string;
   capabilities: string[];
   reputationScore: number;
+  oracleScore?: number;
   tasksCompleted: number;
   stakedAmount: string;
   active: boolean;

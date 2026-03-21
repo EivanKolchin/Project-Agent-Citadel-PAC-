@@ -1,6 +1,7 @@
 import axios from "axios";
 import * as dotenv from "dotenv";
 import * as path from "path";
+import { DEMO_LUFFA_BOTS_FOR_DEPLOY } from "../config/demoBots";
 
 dotenv.config({ path: path.resolve(__dirname, "../../../../.env") });
 
@@ -11,26 +12,16 @@ export interface LuffaBotConfig {
   capabilities: string[];
 }
 
-export const LUFFA_BOTS: LuffaBotConfig[] = [
-  {
-    uid: process.env.LUFFA_BOT1_UID || "",
-    secret: process.env.LUFFA_BOT1_SECRET || "",
-    name: "Luffa Researcher",
-    capabilities: ["research", "summarization", "analysis"],
-  },
-  {
-    uid: process.env.LUFFA_BOT2_UID || "",
-    secret: process.env.LUFFA_BOT2_SECRET || "",
-    name: "Luffa Coder",
-    capabilities: ["coding", "debugging", "complex_tasks"],
-  },
-  {
-    uid: process.env.LUFFA_BOT3_UID || "",
-    secret: process.env.LUFFA_BOT3_SECRET || "",
-    name: "Luffa Analyst",
-    capabilities: ["data", "finance", "math"],
-  }
-];
+/** Env overrides optional; UIDs default to the same values registered by `deploy:local`. */
+export const LUFFA_BOTS: LuffaBotConfig[] = DEMO_LUFFA_BOTS_FOR_DEPLOY.map((b, i) => {
+  const n = i + 1;
+  return {
+    uid: process.env[`LUFFA_BOT${n}_UID`] || b.uid,
+    secret: process.env[`LUFFA_BOT${n}_SECRET`] || "",
+    name: b.name,
+    capabilities: [...b.caps],
+  };
+});
 
 export class LuffaBotService {
   /**

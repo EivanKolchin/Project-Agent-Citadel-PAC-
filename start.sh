@@ -23,7 +23,7 @@ echo "Deploying smart contracts..."
 npm run deploy:local --workspace=contracts
 
 echo "Starting backend and frontend..."
-npm run dev --workspace=backend &
+ENABLE_CHAIN_EVENTS=true npm run dev --workspace=backend &
 BACKEND_PID=$!
 
 npm run dev --workspace=frontend &
