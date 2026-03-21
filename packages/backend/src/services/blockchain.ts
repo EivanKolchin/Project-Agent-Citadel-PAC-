@@ -25,7 +25,7 @@ export class BlockchainService {
     this.eventEmitter = eventEmitter;
 
     const rpcUrl = process.env.ENDLESS_RPC_URL || "http://localhost:8545";
-    const privateKey = process.env.DEPLOYER_PRIVATE_KEY || "0x0000000000000000000000000000000000000000000000000000000000000000";
+    const privateKey = process.env.DEPLOYER_PRIVATE_KEY || "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
     this.provider = new ethers.JsonRpcProvider(rpcUrl);
     this.signer = new ethers.Wallet(privateKey, this.provider);

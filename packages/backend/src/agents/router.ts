@@ -1,8 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Agent, Task } from "../types";
 import * as dotenv from "dotenv";
+import * as path from "path";
 
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, "../../../../.env") });
 
 export interface RoutingDecision {
   taskId: string;
@@ -13,13 +14,17 @@ export interface RoutingDecision {
 }
 
 export class RouterAgent {
-  private anthropic: Anthropic;
+  private model: ReturnType<GoogleGenerativeAI["getGenerativeModel"]>;
   private routingLog: RoutingDecision[] = [];
 
   constructor() {
-    this.anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("Missing GEMINI_API_KEY in environment");
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    this.model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
   }
 
   public async routeTask(task: Task, availableAgents: Agent[]): Promise<string> {
@@ -49,15 +54,12 @@ Available Agents:
 ${JSON.stringify(agentsInfo, null, 2)}
     `;
 
-    const response = await this.anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userMessage }],
-      temperature: 0.1,
+    const response = await this.model.generateContent({
+      contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userMessage}` }] }],
+      generationConfig: { maxOutputTokens: 1024, temperature: 0.1 },
     });
 
-    const outputText = response.content[0].type === "text" ? response.content[0].text : "{}";
+    const outputText = response.response.text();
     
     // Attempt to extract JSON if Claude added markdown code blocks
     const jsonMatch = outputText.match(/```json\n([\s\S]*?)\n```/) || outputText.match(/({[\s\S]*})/);
@@ -87,15 +89,12 @@ ${JSON.stringify(agentsInfo, null, 2)}
 You must respond with ONLY a JSON array of strings:
 ["subtask 1 description", "subtask 2 description", ...]`;
 
-    const response = await this.anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 500,
-      system: systemPrompt,
-      messages: [{ role: "user", content: `Decompose this task: ${task.description}` }],
-      temperature: 0.2,
+    const response = await this.model.generateContent({
+      contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\nDecompose this task: ${task.description}` }] }],
+      generationConfig: { maxOutputTokens: 500, temperature: 0.2 },
     });
 
-    const outputText = response.content[0].type === "text" ? response.content[0].text : "[]";
+    const outputText = response.response.text();
     const jsonMatch = outputText.match(/```json\n([\s\S]*?)\n```/) || outputText.match(/(\[[\s\S]*\])/);
     const parsedStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : outputText;
 
@@ -111,15 +110,12 @@ You must respond with ONLY a JSON array of strings:
     const systemPrompt = `Analyze the task description and decide if it is too complex for a single agent and should be decomposed into subtasks. 
 Reply with ONLY "true" or "false".`;
 
-    const response = await this.anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 10,
-      system: systemPrompt,
-      messages: [{ role: "user", content: `Task: ${taskDescription}` }],
-      temperature: 0.1,
+    const response = await this.model.generateContent({
+      contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\nTask: ${taskDescription}` }] }],
+      generationConfig: { maxOutputTokens: 10, temperature: 0.1 },
     });
 
-    const outputText = response.content[0].type === "text" ? response.content[0].text.trim().toLowerCase() : "false";
+    const outputText = response.response.text().trim().toLowerCase();
     return outputText.includes("true");
   }
 

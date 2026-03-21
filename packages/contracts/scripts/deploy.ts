@@ -1,4 +1,6 @@
 import { ethers } from "hardhat";
+import * as fs from "fs";
+import * as path from "path";
 
 async function main() {
   const [deployer] = await ethers.getSigners();
@@ -43,9 +45,62 @@ async function main() {
   console.log("  - TaskEscrow configured in AgentRegistry");
 
   console.log("\nAll Smart Contracts have been deployed successfully!");
+
+  // 5. Write the addresses to the backend config file
+  console.log("Updating backend contract addresses...");
+  const backendConfigPath = path.join(__dirname, "../../backend/src/config/contracts.ts");
+  let backendConfigConfig = fs.readFileSync(backendConfigPath, "utf8");
+
+  backendConfigConfig = backendConfigConfig.replace(
+    /export const AGENT_REGISTRY_ADDRESS = ".*";/,
+    `export const AGENT_REGISTRY_ADDRESS = "${agentRegistryAddress}";`
+  );
+  backendConfigConfig = backendConfigConfig.replace(
+    /export const TASK_ESCROW_ADDRESS = ".*";/,
+    `export const TASK_ESCROW_ADDRESS = "${taskEscrowAddress}";`
+  );
+  backendConfigConfig = backendConfigConfig.replace(
+    /export const REPUTATION_ORACLE_ADDRESS = ".*";/,
+    `export const REPUTATION_ORACLE_ADDRESS = "${reputationOracleAddress}";`
+  );
+
+  fs.writeFileSync(backendConfigPath, backendConfigConfig);
+  console.log("Backend contracts configuration updated!");
+
+  // 6. Pre-Register the 3 Luffa Worker Bots automatically!
+  console.log("\nRegistering Luffa Bot Identities to Blockchain Mock...");
+  const bots = [
+    { name: "Luffa Researcher", caps: ["research", "summarization", "analysis"], uid: "DDcDRLXytJF" },
+    { name: "Luffa Coder", caps: ["coding", "debugging", "complex_tasks"], uid: "YyBaYqSdrLP" },
+    { name: "Luffa Analyst", caps: ["data", "finance", "math"], uid: "5cDArCwSSXA" }
+  ];
+  
+  // Create 3 sub-wallets to act as the agent addresses via Hardhat's secondary signers
+  const signers = await ethers.getSigners();
+  
+  for (let i = 0; i < bots.length; i++) {
+    const bot = bots[i];
+    const botWallet = signers[i + 1]; // Use wallets 1, 2, 3
+    const botRegistry = agentRegistry.connect(botWallet) as any;
+    
+    // The endpoint points back to our own backend Luffa proxy! 
+    const endpoint = `http://localhost:3001/api/luffa/${bot.uid}`;
+    
+    // Call the AgentRegistry contract directly!
+    const tx = await botRegistry.registerAgent(
+      bot.name,
+      `${bot.name} powered by Luffa API`,
+      endpoint,
+      bot.caps,
+      { value: ethers.parseEther("0.01") }
+    );
+    await tx.wait();
+    console.log(`  - Registered ${bot.name} at ${botWallet.address}`);
+  }
 }
 
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+

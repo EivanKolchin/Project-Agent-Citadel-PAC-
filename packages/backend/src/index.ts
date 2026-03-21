@@ -6,10 +6,14 @@ import axios from "axios";
 import { EventEmitter } from "events";
 import { BlockchainService } from "./services/blockchain";
 import { RouterAgent } from "./agents/router";
+import { LuffaWorkerAgent } from "./agents/luffaWorker";
+import { LUFFA_BOTS } from "./services/luffabot";
 import { Orchestrator } from "./orchestrator";
 import * as dotenv from "dotenv";
+import * as path from "path";
 
-dotenv.config();
+// Load .env from root of monorepo
+dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
 const app = express();
 app.use(cors());
@@ -20,9 +24,10 @@ const wss = new WebSocketServer({ server });
 
 const eventEmitter = new EventEmitter();
 const router = new RouterAgent();
+const luffaWorker = new LuffaWorkerAgent();
 
 // Boot Phase: Environment Validation
-const requiredEnvVars = ["ANTHROPIC_API_KEY", "ENDLESS_RPC_URL", "DEPLOYER_PRIVATE_KEY", "AGENT_REGISTRY_ADDRESS"];
+const requiredEnvVars = ["GEMINI_API_KEY", "ENDLESS_RPC_URL", "DEPLOYER_PRIVATE_KEY", "AGENT_REGISTRY_ADDRESS"];
 const missingVars = requiredEnvVars.filter(v => !process.env[v]);
 if (missingVars.length > 0) {
   console.error(`\n❌ [BOOT ERROR] Missing Required Environment Variables:\n - ${missingVars.join("\n - ")}\n`);
@@ -80,14 +85,26 @@ const broadcast = (type: string, payload: any) => {
   });
 };
 
-eventEmitter.on("activity", (payload) => {
-  const entry = { timestamp: Date.now(), ...payload };
-  activityLog.unshift(entry);
-  if (activityLog.length > 50) activityLog.pop();
-  broadcast("activity", entry);
+// --- Luffa Bot Execution Endpoints ---
+app.post("/api/luffa/:uid/execute", async (req, res) => {
+  const { uid } = req.params;
+  const { taskId, description } = req.body;
+  
+  const botConfig = LUFFA_BOTS.find(b => b.uid === uid);
+  if (!botConfig) return res.status(404).json({ error: "Luffa Bot not found" });
+
+  try {
+    const result = await luffaWorker.executeTask(botConfig, taskId, description);
+    res.json({ result });
+  } catch (error: any) {
+    console.error(`[LuffaWorker Failed] ${uid}:`, error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-eventEmitter.on("TaskPosted", (payload) => {
+app.get("/api/luffa/:uid/health", (req, res) => {
+  res.json({ status: "active" });
+});
   tasksDb[payload.taskId] = { id: payload.taskId, description: payload.description, bounty: payload.bounty, status: "open", createdAt: Date.now() };
   broadcast("task:posted", { task: tasksDb[payload.taskId] });
 });
