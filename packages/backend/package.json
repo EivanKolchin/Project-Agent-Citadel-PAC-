@@ -2,7 +2,7 @@
   "name": "backend",
   "version": "1.0.0",
   "scripts": {
-    "dev": "ts-node src/index.ts",
+    "dev": "kill-port 3001 && ts-node src/index.ts",
     "build": "tsc"
   },
   "dependencies": {

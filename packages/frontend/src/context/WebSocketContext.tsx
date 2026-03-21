@@ -12,6 +12,8 @@ interface AppState {
 }
 
 const WSContext = createContext<AppState | null>(null);
+const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/+$/, '') || 'http://localhost:3001';
+const wsUrl = (import.meta.env.VITE_WS_URL as string | undefined) || apiBase.replace(/^http/i, 'ws');
 
 export const AppProvider = ({ children }: any) => {
   const [stats, setStats] = useState({ totalAgents: 0, activeTasks: 0, completedTasks: 0, totalVolume: '0' });
@@ -27,10 +29,10 @@ export const AppProvider = ({ children }: any) => {
       setIsLoading(true);
       try {
         const [statsRes, activityRes, agentsRes, tasksRes] = await Promise.all([
-          axios.get('http://localhost:3001/api/stats').catch(() => ({ data: stats })),
-          axios.get('http://localhost:3001/api/activity').catch(() => ({ data: [] })),
-          axios.get('http://localhost:3001/api/agents').catch(() => ({ data: [] })),
-          axios.get('http://localhost:3001/api/tasks').catch(() => ({ data: [] }))
+          axios.get(`${apiBase}/api/stats`).catch(() => ({ data: stats })),
+          axios.get(`${apiBase}/api/activity`).catch(() => ({ data: [] })),
+          axios.get(`${apiBase}/api/agents`).catch(() => ({ data: [] })),
+          axios.get(`${apiBase}/api/tasks`).catch(() => ({ data: [] }))
         ]);
         setStats(statsRes.data);
         setActivity(activityRes.data);
@@ -42,7 +44,7 @@ export const AppProvider = ({ children }: any) => {
     };
 
     const connectWS = () => {
-      const ws = new WebSocket('ws://localhost:3001');
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -51,7 +53,12 @@ export const AppProvider = ({ children }: any) => {
       };
 
       ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
+        let data: any;
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          return;
+        }
         
         if (data.type === 'activity') {
           setActivity(prev => [data, ...prev].slice(0, 50));
@@ -75,7 +82,7 @@ export const AppProvider = ({ children }: any) => {
             }
             return [taskObj, ...prev];
           });
-          axios.get('http://localhost:3001/api/stats').then(r => setStats(r.data)).catch(console.error);
+          axios.get(`${apiBase}/api/stats`).then(r => setStats(r.data)).catch(() => undefined);
         }
       };
 
@@ -88,6 +95,7 @@ export const AppProvider = ({ children }: any) => {
     };
 
     connectWS();
+    fetchInitial();
     
     return () => {
       if (wsRef.current) wsRef.current.close();
@@ -95,7 +103,7 @@ export const AppProvider = ({ children }: any) => {
   }, []);
 
   const postTask = async (description: string, budgetEth: string) => {
-    await axios.post('http://localhost:3001/api/tasks', { description, budgetEth, posterAddress: '0xClient' });
+    await axios.post(`${apiBase}/api/tasks`, { description, budgetEth, posterAddress: '0xClient' });
   };
 
   return (

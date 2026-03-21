@@ -27,12 +27,11 @@ const router = new RouterAgent();
 const luffaWorker = new LuffaWorkerAgent();
 
 // Boot Phase: Environment Validation
-const requiredEnvVars = ["GEMINI_API_KEY", "ENDLESS_RPC_URL", "DEPLOYER_PRIVATE_KEY", "AGENT_REGISTRY_ADDRESS"];
-const missingVars = requiredEnvVars.filter(v => !process.env[v]);
-if (missingVars.length > 0) {
-  console.error(`\n❌ [BOOT ERROR] Missing Required Environment Variables:\n - ${missingVars.join("\n - ")}\n`);
-  console.error("Please configure them in your root .env file.\n");
-  process.exit(1);
+const recommendedEnvVars = ["ENDLESS_RPC_URL", "DEPLOYER_PRIVATE_KEY", "GEMINI_API_KEY"];
+const missingRecommended = recommendedEnvVars.filter(v => !process.env[v]);
+if (missingRecommended.length > 0) {
+  console.warn(`\n[BOOT WARNING] Missing optional environment variables:\n - ${missingRecommended.join("\n - ")}\n`);
+  console.warn("Continuing with local defaults/fallbacks where possible.\n");
 }
 
 // Only initialize if we have the RPC URL configured, otherwise provide a mock or handle the error
@@ -105,6 +104,15 @@ app.post("/api/luffa/:uid/execute", async (req, res) => {
 app.get("/api/luffa/:uid/health", (req, res) => {
   res.json({ status: "active" });
 });
+
+eventEmitter.on("activity", (payload) => {
+  const entry = { timestamp: Date.now(), ...payload };
+  activityLog.unshift(entry);
+  if (activityLog.length > 50) activityLog.pop();
+  broadcast("activity", entry);
+});
+
+eventEmitter.on("task:posted", (payload) => {
   tasksDb[payload.taskId] = { id: payload.taskId, description: payload.description, bounty: payload.bounty, status: "open", createdAt: Date.now() };
   broadcast("task:posted", { task: tasksDb[payload.taskId] });
 });

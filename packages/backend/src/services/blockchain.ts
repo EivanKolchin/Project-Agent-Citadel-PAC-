@@ -20,21 +20,57 @@ export class BlockchainService {
   private taskEscrow: Contract;
   private reputationOracle: Contract;
   private eventEmitter: EventEmitter;
+  private rpcUrl: string;
+  private rpcAvailable = false;
 
   constructor(eventEmitter: EventEmitter) {
     this.eventEmitter = eventEmitter;
 
     const rpcUrl = process.env.ENDLESS_RPC_URL || "http://localhost:8545";
+    const chainId = Number(process.env.ENDLESS_CHAIN_ID || 31337);
     const privateKey = process.env.DEPLOYER_PRIVATE_KEY || "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+    this.rpcUrl = rpcUrl;
 
-    this.provider = new ethers.JsonRpcProvider(rpcUrl);
+    this.provider = new ethers.JsonRpcProvider(
+      rpcUrl,
+      { name: "endless", chainId },
+      { staticNetwork: true }
+    );
     this.signer = new ethers.Wallet(privateKey, this.provider);
 
     this.agentRegistry = new Contract(AGENT_REGISTRY_ADDRESS, AGENT_REGISTRY_ABI, this.signer);
     this.taskEscrow = new Contract(TASK_ESCROW_ADDRESS, TASK_ESCROW_ABI, this.signer);
     this.reputationOracle = new Contract(REPUTATION_ORACLE_ADDRESS, REPUTATION_ORACLE_ABI, this.signer);
 
-    this.setupEventListeners();
+    // Contract event subscriptions can trigger noisy reconnect loops when RPC is offline.
+    if (process.env.ENABLE_CHAIN_EVENTS === "true") {
+      this.setupEventListeners();
+    }
+  }
+
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs = 2500): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("RPC timeout")), timeoutMs);
+        })
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  private async ensureRpcAvailable(): Promise<boolean> {
+    try {
+      await this.withTimeout(this.provider.getBlockNumber(), 1500);
+      this.rpcAvailable = true;
+      return true;
+    } catch {
+      this.rpcAvailable = false;
+      return false;
+    }
   }
 
   private setupEventListeners() {
@@ -75,8 +111,9 @@ export class BlockchainService {
 
   async getAllAgents(): Promise<Agent[]> {
     if (!AGENT_REGISTRY_ADDRESS) return [];
-    
-    const agentsData = await this.agentRegistry.getAllAgents();
+    if (!(await this.ensureRpcAvailable())) return [];
+
+    const agentsData = await this.withTimeout(this.agentRegistry.getAllAgents());
     
     const parsedAgents: Agent[] = agentsData.map((a: any) => ({
       address: a.wallet,
@@ -84,9 +121,9 @@ export class BlockchainService {
       description: a.description,
       endpoint: a.endpoint,
       capabilities: Array.from(a.capabilities),
-      reputationScore: Number(a.reputationScore),
-      tasksCompleted: Number(a.tasksCompleted),
-      stakedAmount: ethers.formatEther(a.stakedAmount),
+      reputationScore: Number(a.reputationScore || 0),
+      tasksCompleted: Number(a.tasksCompleted || 0),
+      stakedAmount: ethers.formatEther(a.stakedAmount || 0),
       active: a.active
     }));
 
@@ -94,10 +131,13 @@ export class BlockchainService {
   }
 
   async postTask(description: string, bountyEth: string): Promise<string> {
+    if (!(await this.ensureRpcAvailable())) {
+      throw new Error(`Blockchain RPC unavailable at ${this.rpcUrl}`);
+    }
     const value = ethers.parseEther(bountyEth);
     const deadline = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
 
-    const tx = await this.taskEscrow.postTask(description, deadline, { value });
+    const tx = await this.withTimeout(this.taskEscrow.postTask(description, deadline, { value }));
     const receipt = await tx.wait();
 
     // Parse logs to find TaskPosted event
@@ -116,25 +156,28 @@ export class BlockchainService {
   }
 
   async assignTask(taskId: string, agentAddress: string): Promise<void> {
-    const tx = await this.taskEscrow.assignTask(BigInt(taskId), agentAddress);
+    if (!(await this.ensureRpcAvailable())) return;
+    const tx = await this.withTimeout(this.taskEscrow.assignTask(BigInt(taskId), agentAddress));
     await tx.wait();
   }
 
   async submitResult(taskId: string, resultHash: string, agentAddress: string): Promise<void> {
+    if (!(await this.ensureRpcAvailable())) return;
     // In our simplified mock, the signer is acting across multiple roles.
     // Usually the assigned agent would submit the result.
-    const tx = await this.taskEscrow.submitResult(BigInt(taskId), resultHash);
+    const tx = await this.withTimeout(this.taskEscrow.submitResult(BigInt(taskId), resultHash));
     await tx.wait();
 
     // Automatically release payment if verified
-    const releaseTx = await this.taskEscrow.releasePayment(BigInt(taskId));
+    const releaseTx = await this.withTimeout(this.taskEscrow.releasePayment(BigInt(taskId)));
     await releaseTx.wait();
   }
 
   async getOpenTasks(): Promise<Task[]> {
     if (!TASK_ESCROW_ADDRESS) return [];
+    if (!(await this.ensureRpcAvailable())) return [];
 
-    const tasksData = await this.taskEscrow.getOpenTasks();
+    const tasksData = await this.withTimeout(this.taskEscrow.getOpenTasks());
     const statusMap: TaskStatus[] = ["open", "assigned", "completed", "failed"];
 
     return tasksData.map((t: any) => ({
@@ -142,18 +185,21 @@ export class BlockchainService {
       description: t.description,
       poster: t.poster,
       assignedAgent: t.assignedAgent === ethers.ZeroAddress ? undefined : t.assignedAgent,
-      bounty: ethers.formatEther(t.bounty),
-      deadline: Number(t.deadline),
-      status: statusMap[Number(t.status)],
+      bounty: ethers.formatEther(t.bounty || 0),
+      deadline: Number(t.deadline || 0),
+      status: statusMap[Number(t.status || 0)],
       resultHash: t.resultHash || undefined,
-      createdAt: Number(t.createdAt)
+      createdAt: Number(t.createdAt || 0)
     }));
   }
 
   async getNetworkStats(): Promise<NetworkStats> {
+    if (!(await this.ensureRpcAvailable())) {
+      return { totalAgents: 0, activeTasks: 0, completedTasks: 0, totalVolume: "0.0" };
+    }
     let totalAgents = 0;
     if (AGENT_REGISTRY_ADDRESS) {
-      const agents = await this.agentRegistry.getAllAgents();
+      const agents = await this.withTimeout(this.agentRegistry.getAllAgents());
       totalAgents = agents.length;
     }
 
@@ -165,10 +211,10 @@ export class BlockchainService {
       // NOTE: For exact total volume/stats, we might need a dedicated smart contract function
       // Here we approximate based on fetching open/latest tasks if possible,
       // or we can fetch the nextTaskId and iterate.
-      const nextTaskId: bigint = await this.taskEscrow.nextTaskId();
+      const nextTaskId: bigint = await this.withTimeout(this.taskEscrow.nextTaskId());
       
       for (let i = 0n; i < nextTaskId; i++) {
-        const task = await this.taskEscrow.tasks(i);
+        const task = await this.withTimeout(this.taskEscrow.tasks(i));
         if (Number(task.status) === 0 || Number(task.status) === 1) { // Open or Assigned
           activeTasks++;
         } else if (Number(task.status) === 2) { // Completed
@@ -185,7 +231,7 @@ export class BlockchainService {
       totalAgents,
       activeTasks,
       completedTasks,
-      totalVolume: ethers.formatEther(totalVolumeWei) // Approximation depending on structure
+      totalVolume: ethers.formatEther(totalVolumeWei || 0) // Approximation depending on structure
     };
   }
 }

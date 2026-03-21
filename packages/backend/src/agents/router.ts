@@ -14,13 +14,14 @@ export interface RoutingDecision {
 }
 
 export class RouterAgent {
-  private model: ReturnType<GoogleGenerativeAI["getGenerativeModel"]>;
+  private model: ReturnType<GoogleGenerativeAI["getGenerativeModel"]> | null = null;
   private routingLog: RoutingDecision[] = [];
 
   constructor() {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("Missing GEMINI_API_KEY in environment");
+    if (!apiKey || apiKey.trim().length === 0) {
+      console.warn("[RouterAgent] GEMINI_API_KEY is missing. Falling back to deterministic local routing.");
+      return;
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
@@ -28,6 +29,30 @@ export class RouterAgent {
   }
 
   public async routeTask(task: Task, availableAgents: Agent[]): Promise<string> {
+    if (availableAgents.length === 0) {
+      throw new Error("No available agents to route task");
+    }
+
+    if (!this.model) {
+      const ranked = [...availableAgents].sort((a, b) => {
+        const capA = a.capabilities.join(" ").toLowerCase();
+        const capB = b.capabilities.join(" ").toLowerCase();
+        const taskText = task.description.toLowerCase();
+        const scoreA = (capA.includes(taskText) ? 2 : 0) + a.reputationScore + a.tasksCompleted;
+        const scoreB = (capB.includes(taskText) ? 2 : 0) + b.reputationScore + b.tasksCompleted;
+        return scoreB - scoreA;
+      });
+      const selected = ranked[0];
+      this.logDecision({
+        taskId: task.id,
+        selectedAgent: selected.address,
+        reasoning: "Selected using local fallback scoring (no Gemini API key).",
+        confidence: 0.55,
+        timestamp: Date.now()
+      });
+      return selected.address;
+    }
+
     const systemPrompt = `You are the routing intelligence for an autonomous agent network. Your job is to analyse an incoming task and select the best available agent to complete it based on capability match, reputation score, and task history.
 
 You must respond with ONLY a JSON object:
@@ -85,6 +110,10 @@ ${JSON.stringify(agentsInfo, null, 2)}
   }
 
   public async decomposeTask(task: Task): Promise<string[]> {
+    if (!this.model) {
+      return [task.description];
+    }
+
     const systemPrompt = `You are an expert task decomposer for an agent network. Break the given complex task into 2-4 sequential subtask descriptions. 
 You must respond with ONLY a JSON array of strings:
 ["subtask 1 description", "subtask 2 description", ...]`;
@@ -107,6 +136,10 @@ You must respond with ONLY a JSON array of strings:
   }
 
   public async shouldDecompose(taskDescription: string): Promise<boolean> {
+    if (!this.model) {
+      return false;
+    }
+
     const systemPrompt = `Analyze the task description and decide if it is too complex for a single agent and should be decomposed into subtasks. 
 Reply with ONLY "true" or "false".`;
 

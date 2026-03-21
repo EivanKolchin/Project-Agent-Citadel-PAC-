@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { AppProvider } from './context/WebSocketContext';
+import { AppProvider, useApp } from './context/WebSocketContext';
 import { Dashboard } from './pages/Dashboard';
 import { Agents } from './pages/Agents';
 import { Tasks } from './pages/Tasks';
