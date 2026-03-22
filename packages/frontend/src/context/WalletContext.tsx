@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { ethers } from 'ethers';
-import { MetaMaskSDK } from '@metamask/sdk';
 
 interface WalletState {
   address: string | null;
@@ -28,15 +27,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 
   const connect = async () => {
     try {
-      const MMSDK = new MetaMaskSDK({
-        dappMetadata: {
-          name: "Project Agent Citadel",
-          url: window.location.href,
-        },
-      });
-      await MMSDK.init();
-
-      const eth = MMSDK.getProvider() || (window as any).ethereum;
+      const eth = (window as any).ethereum;
 
       if (!eth) {
         alert("Please install MetaMask or another Web3 wallet.");
@@ -70,17 +61,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const initWeb3 = async () => {
-      let activeProvider = (window as any).ethereum;
-
-      if (!activeProvider) {
-         try {
-           const MMSDK = new MetaMaskSDK({
-             dappMetadata: { name: "Project Agent Citadel", url: window.location.href }
-           });
-           await MMSDK.init();
-           activeProvider = MMSDK.getProvider();
-         } catch(e) { }
-      }
+      const activeProvider = (window as any).ethereum;
 
       if (activeProvider) {
         // Auto connect if accounts are already authorized

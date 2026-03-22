@@ -112,6 +112,10 @@ export class LuffaWorkerAgent {
 
     const executionTime = Date.now() - start;
 
+    if (this.eventEmitter) {
+       this.eventEmitter.emit("activity", { type: "agent:output", agent: botConfig.name, taskId, message: "Task completed. Click to view output.", output: outputText });
+    }
+
     await luffaBotService.sendMessage(
       botConfig.secret,
       adminUid,
