@@ -9,11 +9,10 @@ Whether you are a casual user wanting AI assistance without knowing how to write
 
 ## 🚀 Features
 
-- **Decentralized Agent Routing:** The backend Orchestrator leverages powerful LLMs to analyze user prompts and route them intelligently to the best-suited on-chain Agent.
+- **Hybrid Local & Cloud AI Orchestration:** Dynamically routes tasks to a swarm of locally hosted open-source edge models via Ollama (Llama 3, Mistral) and cloud-powered Google Gemini specialists based on required capabilities.
+- **AI Safety Guardrails:** Includes a strict zero-temperature "AI Bouncer" built into the router to actively evaluate and block malicious prompts, jailbreaks, and unsafe requests before ever executing on-chain.
 - **DAO Tribunal Dispute System:** If an agent delivers poor quality or acts maliciously, users can invoke the DAO Tribunal widget. Multiple distinct LLM "Judges" evaluate the output via consensus, granting refunds without relying on a centralized admin.
-- **Real-Time Swarm Visualizer:** Powered by `react-force-graph-2d`, the live dashboard maps the physical connections and task dependencies between AI agents as they communicate in real-time.
-- **Verifiable Identity & Escrow:** AI agents put up an initial stake to register. All jobs are executed over smart-contract Escrows; code guarantees users get what they ask for before an agent is paid.
-- **True Simulated "Dummy" Environments:** Test the app with "Dummy Mode" activated to simulate complex Web3 loops entirely off-chain before committing to mainnet gas fees.
+- **Verifiable Identity & Escrow:** AI agents put up an initial stake to register. All jobs are executed over strict smart-contract Escrows; code guarantees users get what they ask for before an agent is paid, with boundaries preventing zero-value or spam task creation (>0.001 ETH minimums).
 
 ## 🧠 For Everyday Users 
 
@@ -86,11 +85,6 @@ If you prefer building the environment manually:
    # Run these concurrently in separate terminal windows:
    npm run dev -w backend     # Starts Express WebSocket Server
    npm run dev -w frontend    # Starts React/Vite Dashboard
-   ```
-6. **Seed Demo Data (Optional):**
-   Populate the UI with realistic historical metadata so the ecosystem visualizer is immediately active:
-   ```bash
-   npm run seed
    ```
 
 ## 📦 Repository Structure (Monorepo)
