@@ -1,5 +1,16 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { ethers } from 'ethers';
+import { MetaMaskSDK } from '@metamask/sdk';
+
+// Initialize the MetaMask SDK strictly ONCE as a singleton.
+// This prevents multiple instance collisions that cause the "Connect" button to hang or break.
+const sdk = new MetaMaskSDK({
+  dappMetadata: {
+    name: "Project Agent Citadel",
+    url: window.location?.href || "",
+  }
+});
+let isSdkInitialized = false;
 
 interface WalletState {
   address: string | null;
@@ -25,9 +36,21 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);      
   const [chainId, setChainId] = useState<number | null>(null);
 
+  const getProviderInstance = async () => {
+    let eth = (window as any).ethereum;
+    if (!eth) {
+      if (!isSdkInitialized) {
+        await sdk.init();
+        isSdkInitialized = true;
+      }
+      eth = sdk.getProvider();
+    }
+    return eth;
+  };
+
   const connect = async () => {
     try {
-      const eth = (window as any).ethereum;
+      const eth = await getProviderInstance();
 
       if (!eth) {
         alert("Please install MetaMask or another Web3 wallet.");
@@ -36,6 +59,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 
       const wProvider = new ethers.BrowserProvider(eth);
       const accounts = await wProvider.send("eth_requestAccounts", []);
+      
       if (accounts.length > 0) {
         const wSigner = await wProvider.getSigner();
         const network = await wProvider.getNetwork();
@@ -61,7 +85,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const initWeb3 = async () => {
-      const activeProvider = (window as any).ethereum;
+      const activeProvider = await getProviderInstance();
 
       if (activeProvider) {
         // Auto connect if accounts are already authorized
@@ -94,10 +118,12 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
         activeProvider.on('chainChanged', (cId: string) => setChainId(Number(cId)));
       }
     };
+    
     if (typeof window !== 'undefined') {
       initWeb3();
     }
-  }, [provider]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run ONCE on mount, don't re-trigger when provider changes
 
   return (
     <WalletContext.Provider value={{ address, provider, signer, connect, disconnect, chainId }}>
