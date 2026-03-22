@@ -6,7 +6,7 @@ interface AppState {
   activity: any[];
   agents: any[];
   tasks: any[];
-  config: { AGENT_REGISTRY_ADDRESS?: string, TASK_ESCROW_ADDRESS?: string };
+  config: { AGENT_REGISTRY_ADDRESS?: string, TASK_ESCROW_ADDRESS?: string, rpcConnected?: boolean };
   isConnected: boolean;
   isLoading: boolean;
   postTask: (desc: string, budget: string) => Promise<void>;

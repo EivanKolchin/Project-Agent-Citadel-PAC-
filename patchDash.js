@@ -1,48 +1,14 @@
-import { useApp } from '../context/WebSocketContext';
+const fs = require('fs');
+const path = 'packages/frontend/src/pages/Dashboard.tsx';
+let code = fs.readFileSync(path, 'utf8');
+
+const importReplacement = `import { useApp } from '../context/WebSocketContext';
 import { useEthPrice } from '../hooks/useEthPrice';
-import { TerminalViewer } from '../components/TerminalViewer';
+import { TerminalViewer } from '../components/TerminalViewer';`;
 
-export const Dashboard = () => {
-  const { stats, activity, isLoading } = useApp();
-  const { formatUsd } = useEthPrice();
+code = code.replace(/import \{ useApp \} from '\.\.\/context\/WebSocketContext';\r?\nimport \{ useEthPrice \} from '\.\.\/hooks\/useEthPrice';/, importReplacement);
 
-  return (
-    <div className="space-y-8 animate-fade-in pb-10">
-      <header className="flex justify-between items-end">
-        <div>
-          <h1 className="text-3xl font-light tracking-tight text-white mb-1">Mission Control</h1>
-          <p className="text-zinc-400 text-sm">Real-time status of the autonomous agent economy</p>
-        </div>
-      </header>
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Agents', value: stats.totalAgents, icon: '⚡' },
-          { label: 'Active Tasks', value: stats.activeTasks, icon: '⚙️' },
-          { label: 'Completed Tasks', value: stats.completedTasks, icon: '✅' },
-          { label: 'Volume', value: `${stats.totalVolume} ETH`, subText: formatUsd(stats.totalVolume), icon: '💎' },
-        ].map((s, i) => (
-          <div key={i} className="bg-zinc-900/40 border border-white/5 backdrop-blur-md p-6 rounded-2xl shadow-2xl transition-all duration-300 hover:border-white/10 hover:bg-zinc-900/60 group relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="flex items-start justify-between relative z-10">
-              <div>
-                <h3 className="text-zinc-400 text-xs font-semibold uppercase tracking-wider mb-2">{s.label}</h3>
-                {isLoading ? (
-                  <div className="h-9 w-16 bg-white/5 animate-pulse mt-2 rounded"></div>
-                ) : (
-                  <>
-                    <p className="text-3xl font-light text-white">{s.value}</p>
-                    {s.subText && <p className="text-xs text-zinc-500 mt-1">{s.subText}</p>}
-                  </>
-                )}
-              </div>
-              {s.icon && <div className="text-2xl opacity-60 group-hover:opacity-100 transition-opacity grayscale">{s.icon}</div>}
-            </div>
-          </div>
-        ))}
-      </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+const structureReplacement = `      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="bg-zinc-900/40 border border-white/5 backdrop-blur-md rounded-2xl overflow-hidden shadow-2xl flex flex-col">
           <div className="px-6 py-4 border-b border-white/5 bg-zinc-900/30">      
             <h2 className="text-sm font-semibold tracking-wider text-zinc-300 uppercase">Live Operations Feed</h2>
@@ -76,7 +42,7 @@ export const Dashboard = () => {
                           {new Date(act.timestamp).toLocaleTimeString(undefined, { hour12: false })}
                         </span>
                         {act.txHash && (
-                          <a href={`https://explorer.endless.net/tx/${act.txHash}`} target="_blank" rel="noreferrer" className="text-[11px] font-medium text-zinc-400 hover:text-white transition-colors">
+                          <a href={\`https://explorer.endless.net/tx/\${act.txHash}\`} target="_blank" rel="noreferrer" className="text-[11px] font-medium text-zinc-400 hover:text-white transition-colors">
                             View Transaction ↗
                           </a>
                         )}
@@ -100,4 +66,9 @@ export const Dashboard = () => {
       </div>
     </div>
   );
-};
+};`;
+
+code = code.replace(/<div className="bg-zinc-900\/40 border border-white\/5 backdrop-blur-md rounded-2xl overflow-hidden shadow-2xl flex flex-col">[\s\S]*<\/div>\s*<\/div>\s*\);\s*\};/m, structureReplacement);
+
+fs.writeFileSync(path, code);
+console.log("Dashboard updated with Terminal");

@@ -135,7 +135,7 @@ app.post("/api/luffa/:uid/execute", async (req, res) => {
   
   // Provide a generic fallback for frontend-registered agents
   if (!botConfig) {
-    if (uid === "luffa_dev_123" || uid.startsWith("frontend")) {
+    if (true) { // Automatically accept dynamically registered frontend bots
       botConfig = {
         uid,
         secret: "dev",
@@ -322,9 +322,7 @@ app.get("/api/activity", (req, res) => {
 
 // Since standard agents register dynamically with stake in the contract directly,
 // this endpoint serves as a helper/proxy if the backend needs to seed demo agents.
-app.post("/api/agents/register", async (req, res) => {
-  res.status(501).json({ error: "Direct registration via backend proxy requires private key. Agents should register self via smart contract directly." });
-});
+
 
 const PORT = process.env.BACKEND_PORT || 3001;
 server.listen(PORT, () => {

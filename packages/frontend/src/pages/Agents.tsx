@@ -1,8 +1,12 @@
 import { useApp } from '../context/WebSocketContext';
 import { useState } from 'react';
 import { LuffaSDK } from '../lib/luffa';
-import { Interface } from 'ethers';
+import { Interface, ethers } from 'ethers';
 import { useEthPrice } from '../hooks/useEthPrice';
+import { Contract } from 'ethers';
+import { useWallet } from '../context/WalletContext';
+import { AgentLeaderboard } from '../components/AgentLeaderboard';
+
 
 const AGENT_REGISTRY_ABI = [
   "function registerAgent(string name, string description, string endpoint, string[] capabilities) payable"
@@ -10,6 +14,7 @@ const AGENT_REGISTRY_ABI = [
 
 export const Agents = () => {
   const { agents, isLoading, config } = useApp();
+  const { signer } = useWallet();
   const { formatUsd } = useEthPrice();
   const [filter, setFilter] = useState('');
   const [regStatus, setRegStatus] = useState('');
@@ -18,21 +23,31 @@ export const Agents = () => {
   const [customSecret, setCustomSecret] = useState('');
   const [customName, setCustomName] = useState('');
   const [customCaps, setCustomCaps] = useState('general,chat');
-  const [showCustomReg, setShowCustomReg] = useState(false);
-  const [customUid, setCustomUid] = useState('');
-  const [customSecret, setCustomSecret] = useState('');
-  const [customName, setCustomName] = useState('');
-  const [customCaps, setCustomCaps] = useState('general,chat');
-
   const filtered = agents.filter(a => !filter || a.capabilities.some((c: string) => c.toLowerCase().includes(filter.toLowerCase())));
-
+  const handleDeregister = async (agentAddress: string) => {
+    if (!config.AGENT_REGISTRY_ADDRESS || !signer) {
+      setRegStatus('Error: Wallet not connected or contract unknown.');
+      setTimeout(() => setRegStatus(''), 3000);
+      return;
+    }
+    try {
+      setRegStatus('Deregistering Agent...');
+      const contract = new Contract(config.AGENT_REGISTRY_ADDRESS, ["function deregisterAgent()"], signer);
+      const tx = await contract.deregisterAgent();
+      await tx.wait();
+      setRegStatus('Agent Deregistered!');
+      setTimeout(() => setRegStatus(''), 3000);
+    } catch (e: any) {
+      setRegStatus(`Error: ${e.message}`);
+      setTimeout(() => setRegStatus(''), 3000);
+    }
+  };
   const handleRegister = async () => {
     if (!config.AGENT_REGISTRY_ADDRESS) {
       setRegStatus('Error: Contracts not loaded. Is the backend running?');
       setTimeout(() => setRegStatus(''), 3000);
       return;
     }
-
     try {
       setRegStatus('Authenticating Luffa Identity...');
       const identity = await LuffaSDK.getUserIdentity();
@@ -63,11 +78,20 @@ export const Agents = () => {
         });
       }
 
-      await LuffaSDK.signTransaction({ 
-        to: config.AGENT_REGISTRY_ADDRESS, 
-        value: '0.01',
-        data: data
-      });
+if (signer) {
+        const txResp = await signer.sendTransaction({
+          to: config.AGENT_REGISTRY_ADDRESS,
+          value: ethers.parseEther('0.01'),
+          data: data as string
+        });
+        await txResp.wait();
+      } else {
+        await LuffaSDK.signTransaction({
+          to: config.AGENT_REGISTRY_ADDRESS,
+          value: '0.01',
+          data: data as string
+        });
+      }
 
       setRegStatus('Agent Registration Complete!');
       setTimeout(() => setRegStatus(''), 3000);
@@ -79,26 +103,55 @@ export const Agents = () => {
 
   return (
     <div className="space-y-8 animate-fade-in pb-10">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-white/5 pb-6">
-        <div className="flex-1">
-          <h1 className="text-3xl font-light tracking-tight text-white mb-1">Agent Roster</h1>
-          <p className="text-zinc-400 text-sm">Specialists currently online and accepting tasks.</p>
+      <div className="flex flex-col border-b border-white/5 pb-6">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-4">
+          <div className="flex-1">
+            <h1 className="text-3xl font-light tracking-tight text-white mb-1">Agent Roster</h1>
+            <p className="text-zinc-400 text-sm">Specialists currently online and accepting tasks.</p>
+          </div>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <input
+              type="text"
+              placeholder="Filter capability..."
+              value={filter}
+              onChange={e => setFilter(e.target.value)}
+              className="px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-white/30 text-white placeholder-zinc-500 w-full sm:w-56 transition-all"
+            />
+            <button
+              onClick={() => setShowCustomReg(!showCustomReg)}
+              className="whitespace-nowrap px-6 py-2.5 bg-zinc-800 text-white hover:bg-zinc-700 rounded-xl text-sm font-semibold transition-all shadow-lg"
+            >
+              {showCustomReg ? 'Hide Custom Agent' : 'New Custom Agent'}
+            </button>
+            <button
+              onClick={handleRegister}
+              className="whitespace-nowrap px-6 py-2.5 bg-white text-black hover:bg-zinc-200 rounded-xl text-sm font-semibold transition-all shadow-lg"
+            >
+              {regStatus ? 'Wait...' : 'Register Agent'}
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <input 
-            type="text" 
-            placeholder="Filter capability..." 
-            value={filter}
-            onChange={e => setFilter(e.target.value)}
-            className="px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-white/30 text-white placeholder-zinc-500 w-full sm:w-56 transition-all"
-          />
-          <button 
-            onClick={handleRegister}
-            className="whitespace-nowrap px-6 py-2.5 bg-white text-black hover:bg-zinc-200 rounded-xl text-sm font-semibold transition-all shadow-lg"
-          >
-            {regStatus ? 'Wait...' : 'Register Luffa Agent'}
-          </button>
-        </div>
+
+        {showCustomReg && (
+          <div className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1 uppercase tracking-wider">Agent UID</label>
+              <input value={customUid} onChange={e => setCustomUid(e.target.value)} placeholder="bot-123" className="w-full px-4 py-2 bg-black/50 border border-white/10 rounded-lg text-white text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1 uppercase tracking-wider">Secret / API Key</label>
+              <input value={customSecret} onChange={e => setCustomSecret(e.target.value)} type="password" placeholder="super-secret" className="w-full px-4 py-2 bg-black/50 border border-white/10 rounded-lg text-white text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1 uppercase tracking-wider">Agent Name</label>
+              <input value={customName} onChange={e => setCustomName(e.target.value)} placeholder="My Super Bot" className="w-full px-4 py-2 bg-black/50 border border-white/10 rounded-lg text-white text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1 uppercase tracking-wider">Capabilities (comma-separated)</label>
+              <input value={customCaps} onChange={e => setCustomCaps(e.target.value)} placeholder="trading, analysis, chat" className="w-full px-4 py-2 bg-black/50 border border-white/10 rounded-lg text-white text-sm" />
+            </div>
+          </div>
+        )}
       </div>
       {regStatus && (
         <div className="bg-white/10 border border-white/20 text-white backdrop-blur-md px-5 py-3 rounded-xl text-sm animate-pulse shadow-xl">

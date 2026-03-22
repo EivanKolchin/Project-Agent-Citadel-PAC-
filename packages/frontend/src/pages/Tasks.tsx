@@ -1,11 +1,14 @@
 import { useApp } from '../context/WebSocketContext';
 import { useState } from 'react';
 import { LuffaSDK } from '../lib/luffa';
-import { Interface } from 'ethers';
+import { Interface, Contract, ethers } from 'ethers';
 import { useEthPrice } from '../hooks/useEthPrice';
+import { useWallet } from '../context/WalletContext';
 
 const TASK_ESCROW_ABI = [
-  "function postTask(string description, uint256 deadline) payable"
+  "function postTask(string description, uint256 deadline) payable",
+  "function cancelTask(uint256 taskId)",
+  "function disputeTask(uint256 taskId)"
 ];
 
 function formatAssignee(t: any): string {
@@ -20,6 +23,7 @@ function formatAssignee(t: any): string {
 
 export const Tasks = () => {
   const { tasks, agents, isLoading, config } = useApp();
+  const { address, signer } = useWallet();
   const { formatUsd } = useEthPrice();
   const [isModalOpen, setModalOpen] = useState(false);
   const [desc, setDesc] = useState('');
@@ -66,11 +70,23 @@ export const Tasks = () => {
         Math.floor(Date.now() / 1000) + 86400 // 24-hour deadline
       ]) as string;
 
-      const txHash = await LuffaSDK.signTransaction({
-        to: config.TASK_ESCROW_ADDRESS, // Real Escrow Contract Address
-        value: budget,
-        data: data 
-      });
+let txHash = '';
+      if (signer) {
+        setDeployStep(2); // Provide visual feedback for wallet
+        const txResp = await signer.sendTransaction({
+          to: config.TASK_ESCROW_ADDRESS,
+          value: ethers.parseEther(budget),
+          data: data
+        });
+        txHash = txResp.hash;
+        await txResp.wait();
+      } else {
+        txHash = await LuffaSDK.signTransaction({
+          to: config.TASK_ESCROW_ADDRESS, // Real Escrow Contract Address
+          value: budget,
+          data: data
+        });
+      }
       
       setDeployStep(3); // "Transaction confirmed. Routing Task to Network..."
       
@@ -100,6 +116,26 @@ export const Tasks = () => {
       
       setDeployStep(-1); // Error
       setIsDeploying(false);
+    }
+  };
+
+    const handleAction = async (action: 'cancel' | 'dispute', taskId: string) => {
+    if (!signer || !config.TASK_ESCROW_ADDRESS) {
+      setErrorMessage("Wallet not connected or contracts not loaded");
+      return;
+    }
+    try {
+      const contract = new Contract(config.TASK_ESCROW_ADDRESS, TASK_ESCROW_ABI, signer);
+      if (action === 'cancel') {
+        const tx = await contract.cancelTask(taskId);
+        await tx.wait();
+      } else if (action === 'dispute') {
+        const tx = await contract.disputeTask(taskId);
+        await tx.wait();
+      }
+    } catch(err: any) {
+      console.error(err);
+      setErrorMessage(err.message || 'Transaction failed');
     }
   };
 
@@ -133,8 +169,9 @@ export const Tasks = () => {
             <tr className="border-b border-white/5 text-zinc-400">
               <th className="p-5 font-medium tracking-wide">Task</th>
               <th className="p-5 font-medium tracking-wide">Bounty (ETH)</th>
-              <th className="p-5 font-medium tracking-wide">Status</th>
+                            <th className="p-5 font-medium tracking-wide">Status</th>
               <th className="p-5 font-medium tracking-wide hidden sm:table-cell">Assigned Agent</th>
+              <th className="p-5 font-medium tracking-wide text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
@@ -165,8 +202,17 @@ export const Tasks = () => {
                     {t.status}
                   </span>
                 </td>
-                <td className="p-5 text-zinc-400 text-xs hidden sm:table-cell font-mono">
+                                <td className="p-5 text-zinc-400 text-xs hidden sm:table-cell font-mono">
                   {formatAssignee(t)}
+                </td>
+                <td className="p-5 text-right">
+                  {t.poster && address && t.poster.toLowerCase() === address.toLowerCase() ? (
+                    t.status === 'open' ? (
+                      <button onClick={(e) => { e.stopPropagation(); handleAction('cancel', t.id); }} className="text-[10px] px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 rounded hover:bg-red-500/20 transition-all uppercase tracking-wider font-bold">Cancel</button>
+                    ) : t.status === 'completed' ? (
+                      <button onClick={(e) => { e.stopPropagation(); handleAction('dispute', t.id); }} className="text-[10px] px-3 py-1 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded hover:bg-purple-500/20 transition-all uppercase tracking-wider font-bold">Dispute</button>
+                    ) : null
+                  ) : null}
                 </td>
               </tr>
             ))}

@@ -9,12 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@metamask/sdk": "^0.34.0",
+    "@types/d3-force": "^3.0.10",
     "axios": "^1.6.7",
+    "d3-force": "^3.0.0",
     "ethers": "^6.16.0",
     "lucide-react": "^0.577.0",
     "qrcode.react": "^4.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-force-graph-2d": "^1.29.1",
     "react-router-dom": "^6.28.2"
   },
   "devDependencies": {

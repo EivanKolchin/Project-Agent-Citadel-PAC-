@@ -7,6 +7,8 @@ import { Settings } from './pages/Settings';
 import { Activity, Users, CheckSquare, Settings as SettingsIcon, GitMerge } from 'lucide-react';
 import { NetworkGraph } from './pages/NetworkGraph';
 import { useState, useEffect } from 'react';
+import { WalletProvider, useWallet } from './context/WalletContext';
+import { Wallet } from 'lucide-react';
 
 const NavLink = ({ to, icon: Icon, label }: { to: string, icon: any, label: string }) => {
   const location = useLocation();
@@ -43,18 +45,39 @@ const ConnectionBanner = () => {
 };
 
 const DummyModeBanner = () => {
-  const [isDummy, setIsDummy] = useState(localStorage.getItem('dummy_mode') === 'true');
+  const { provider } = useWallet();
+  const { config } = useApp();
+  const [isDummy, setIsDummy] = useState(() => {
+    if (provider) return false;
+    return localStorage.getItem('dummy_mode') === 'true';
+  });
+
+  useEffect(() => {
+    if (provider || config?.rpcConnected) {
+       localStorage.removeItem('dummy_mode');
+       setIsDummy(false);
+       window.dispatchEvent(new Event('storage'));
+    }
+  }, [provider, config]);
 
   useEffect(() => {
     const handleStorage = () => setIsDummy(localStorage.getItem('dummy_mode') === 'true');
     window.addEventListener('storage', handleStorage);
-    // Fallback interval just in case
-    const interval = setInterval(handleStorage, 2000);
+    const interval = setInterval(() => {
+      const mode = localStorage.getItem('dummy_mode') === 'true';
+      if ((provider || config?.rpcConnected) && mode) {
+        localStorage.removeItem('dummy_mode');
+        setIsDummy(false);
+        window.dispatchEvent(new Event('storage'));
+      } else {
+        setIsDummy(mode);
+      }
+    }, 2000);
     return () => {
       window.removeEventListener('storage', handleStorage);
       clearInterval(interval);
     };
-  }, []);
+  }, [provider, config]);
 
   if (!isDummy) return null;
 
@@ -66,6 +89,25 @@ const DummyModeBanner = () => {
   );
 };
 
+const WalletWidget = () => {
+  const { address, connect, disconnect } = useWallet();
+  return (
+    <div className="absolute top-4 right-4 z-50 pointer-events-auto">
+      {address ? (
+        <button onClick={disconnect} className="flex items-center space-x-2 bg-zinc-900/80 border border-white/10 px-4 py-2 rounded-xl text-xs font-mono text-zinc-300 hover:bg-zinc-800 transition-colors backdrop-blur-md">
+          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>{address.slice(0,6)}...{address.slice(-4)}</span>
+        </button>
+      ) : (
+        <button onClick={connect} className="flex items-center space-x-2 bg-blue-500/10 border border-blue-500/20 px-4 py-2 rounded-xl text-xs font-mono text-blue-400 hover:bg-blue-500/20 transition-colors backdrop-blur-md">
+          <Wallet size={14} />
+          <span>Connect Web3</span>
+        </button>
+      )}
+    </div>
+  );
+};
+  
 export default function App() {
   const [isDummy, setIsDummy] = useState(localStorage.getItem('dummy_mode') === 'true');
 
@@ -81,6 +123,7 @@ export default function App() {
 
   return (
     <AppProvider>
+      <WalletProvider>
       <BrowserRouter>
         <div className={`min-h-screen pb-24 sm:pt-16 sm:pb-0 font-sans relative transition-colors duration-700 bg-[#0a0a0a] text-zinc-300 ${isDummy ? 'bg-gradient-to-b from-[#14120f] to-[#0a0a0a]' : ''}`}>
           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none mix-blend-overlay"></div>
@@ -88,8 +131,9 @@ export default function App() {
             <ConnectionBanner />
             <DummyModeBanner />
           </div>
+          <WalletWidget />
           <Navigation />
-          <main className={`max-w-7xl mx-auto p-4 md:p-8 transition-transform duration-500 relative z-10 ${isDummy ? 'translate-y-6 sm:translate-y-2' : ''}`}>
+          <main className={`max-w-7xl mx-auto p-4 md:p-8 transition-transform duration-500 relative z-10 ${isDummy ? 'translate-y-6 sm:translate-y-2' : ''}`}>  
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/agents" element={<Agents />} />
@@ -100,6 +144,7 @@ export default function App() {
           </main>
         </div>
       </BrowserRouter>
+      </WalletProvider>
     </AppProvider>
   );
 }
