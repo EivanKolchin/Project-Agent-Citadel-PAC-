@@ -6,6 +6,7 @@ import { useEthPrice } from '../hooks/useEthPrice';
 import { Contract } from 'ethers';
 import { useWallet } from '../context/WalletContext';
 import { AgentLeaderboard } from '../components/AgentLeaderboard';
+import { InfoTooltip } from '../components/InfoTooltip';
 
 
 const AGENT_REGISTRY_ABI = [
@@ -14,33 +15,45 @@ const AGENT_REGISTRY_ABI = [
 
 export const Agents = () => {
   const { agents, isLoading, config } = useApp();
-  const { signer } = useWallet();
+  const { signer, address } = useWallet();
   const { formatUsd } = useEthPrice();
   const [filter, setFilter] = useState('');
+  const [showMyAgents, setShowMyAgents] = useState(false);
   const [regStatus, setRegStatus] = useState('');
   const [showCustomReg, setShowCustomReg] = useState(false);
   const [customUid, setCustomUid] = useState('');
   const [customSecret, setCustomSecret] = useState('');
   const [customName, setCustomName] = useState('');
   const [customCaps, setCustomCaps] = useState('general,chat');
-  const filtered = agents.filter(a => !filter || a.capabilities.some((c: string) => c.toLowerCase().includes(filter.toLowerCase())));
-  const handleDeregister = async (agentAddress: string) => {
-    if (!config.AGENT_REGISTRY_ADDRESS || !signer) {
-      setRegStatus('Error: Wallet not connected or contract unknown.');
-      setTimeout(() => setRegStatus(''), 3000);
-      return;
+
+  // Derive final agents list based on tabs
+  const filtered = agents.filter(a => {
+    if (showMyAgents) {
+       // Filter by owner address if available, fallback to true if no address
+       const isMine = signer && address ? a.owner?.toLowerCase() === address.toLowerCase() : false;
+       if (!isMine) return false;
     }
-    try {
-      setRegStatus('Deregistering Agent...');
-      const contract = new Contract(config.AGENT_REGISTRY_ADDRESS, ["function deregisterAgent()"], signer);
-      const tx = await contract.deregisterAgent();
-      await tx.wait();
-      setRegStatus('Agent Deregistered!');
-      setTimeout(() => setRegStatus(''), 3000);
-    } catch (e: any) {
-      setRegStatus(`Error: ${e.message}`);
-      setTimeout(() => setRegStatus(''), 3000);
-    }
+    return !filter || a.capabilities.some((c: string) => c.toLowerCase().includes(filter.toLowerCase()));
+  });
+
+  const handleDeregister = async (e: any, agentAddress: string) => {
+      e.stopPropagation();
+      if (!config.AGENT_REGISTRY_ADDRESS || !signer) {
+        setRegStatus('Error: Wallet not connected or contract unknown.');
+        setTimeout(() => setRegStatus(''), 3000);
+        return;
+      }
+      try {
+        setRegStatus('Deregistering Agent...');
+        const contract = new Contract(config.AGENT_REGISTRY_ADDRESS, ["function deregisterAgent()"], signer);
+        const tx = await contract.deregisterAgent();
+        await tx.wait();
+        setRegStatus('Agent Deregistered!');
+        setTimeout(() => setRegStatus(''), 3000);
+      } catch (e: any) {
+        setRegStatus(`Error: ${e.message}`);
+        setTimeout(() => setRegStatus(''), 3000);
+      }
   };
   const handleRegister = async () => {
     if (!config.AGENT_REGISTRY_ADDRESS) {
@@ -66,7 +79,7 @@ export const Agents = () => {
       ]);
 
       if (showCustomReg) {
-        await fetch('http://localhost:3001/api/agents/register', {
+        const res = await fetch('http://localhost:3001/api/agents/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -76,6 +89,11 @@ export const Agents = () => {
             capabilities: customCaps.split(',').map(c => c.trim())
           })
         });
+        
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || "Failed to register custom agent with backend.");
+        }
       }
 
 if (signer) {
@@ -103,13 +121,25 @@ if (signer) {
 
   return (
     <div className="space-y-8 animate-fade-in pb-10">
+      
+      <AgentLeaderboard />
+
       <div className="flex flex-col border-b border-white/5 pb-6">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-4">
           <div className="flex-1">
-            <h1 className="text-3xl font-light tracking-tight text-white mb-1">Agent Roster</h1>
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-3xl font-light tracking-tight text-white mb-1">Agent Roster</h1>
+              <InfoTooltip text="Meet the autonomous workforce. Agents are registered via smart contracts and handle tasks based on their specific hardware and LLM capabilities." />
+            </div>
             <p className="text-zinc-400 text-sm">Specialists currently online and accepting tasks.</p>
           </div>
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <button
+               onClick={() => setShowMyAgents(!showMyAgents)}
+               className={`whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg ${showMyAgents ? 'bg-indigo-600 text-white' : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'}`}
+            >
+               {showMyAgents ? 'Showing My Agents' : 'My Agents'}
+            </button>
             <input
               type="text"
               placeholder="Filter capability..."
@@ -133,22 +163,40 @@ if (signer) {
         </div>
 
         {showCustomReg && (
-          <div className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1 uppercase tracking-wider">Agent UID</label>
-              <input value={customUid} onChange={e => setCustomUid(e.target.value)} placeholder="bot-123" className="w-full px-4 py-2 bg-black/50 border border-white/10 rounded-lg text-white text-sm" />
+          <div className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 mt-4">
+            <div className="flex items-center gap-2 mb-4 pb-4 border-b border-white/5">
+              <h3 className="text-white font-medium">Custom Agent Registration</h3>
+              <InfoTooltip text="Register a custom third-party agent that connects directly to the Citadel via the Luffa network protocol. You must run an agent script (packages/agents) and provide these credentials." />
             </div>
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1 uppercase tracking-wider">Secret / API Key</label>
-              <input value={customSecret} onChange={e => setCustomSecret(e.target.value)} type="password" placeholder="super-secret" className="w-full px-4 py-2 bg-black/50 border border-white/10 rounded-lg text-white text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1 uppercase tracking-wider">Agent Name</label>
-              <input value={customName} onChange={e => setCustomName(e.target.value)} placeholder="My Super Bot" className="w-full px-4 py-2 bg-black/50 border border-white/10 rounded-lg text-white text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1 uppercase tracking-wider">Capabilities (comma-separated)</label>
-              <input value={customCaps} onChange={e => setCustomCaps(e.target.value)} placeholder="trading, analysis, chat" className="w-full px-4 py-2 bg-black/50 border border-white/10 rounded-lg text-white text-sm" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1 uppercase tracking-wider flex items-center gap-1">
+                  Agent UID 
+                  <InfoTooltip text="An arbitrary unique string identifier you define for your agent. For example: my-trading-bot-1" />
+                </label>
+                <input value={customUid} onChange={e => setCustomUid(e.target.value)} placeholder="bot-123" className="w-full px-4 py-2 bg-black/50 border border-white/10 rounded-lg text-white text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1 uppercase tracking-wider flex items-center gap-1">
+                  Secret / API Key
+                  <InfoTooltip text="A strong secure password you choose. The backend uses this to authenticate your agent webhook connection." />
+                </label>
+                <input value={customSecret} onChange={e => setCustomSecret(e.target.value)} type="password" placeholder="super-secret" className="w-full px-4 py-2 bg-black/50 border border-white/10 rounded-lg text-white text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1 uppercase tracking-wider flex items-center gap-1">
+                  Agent Name
+                  <InfoTooltip text="The public display name for your agent visible on the network dashboard." />
+                </label>
+                <input value={customName} onChange={e => setCustomName(e.target.value)} placeholder="My Super Bot" className="w-full px-4 py-2 bg-black/50 border border-white/10 rounded-lg text-white text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1 uppercase tracking-wider flex items-center gap-1">
+                  Capabilities
+                  <InfoTooltip text="Comma-separated keywords defining what tasks your agent is allowed to handle natively. Ensure words align with potential user requests." />
+                </label>
+                <input value={customCaps} onChange={e => setCustomCaps(e.target.value)} placeholder="trading, analysis, chat" className="w-full px-4 py-2 bg-black/50 border border-white/10 rounded-lg text-white text-sm" />
+              </div>
             </div>
           </div>
         )}
@@ -209,6 +257,12 @@ if (signer) {
                 <div className="bg-white h-full rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)]" style={{ width: `${Math.min(100, agent.reputationScore)}%` }} />
               </div>
               <p className="text-right text-[10px] text-zinc-600 mt-2 font-mono uppercase tracking-widest">{agent.tasksCompleted} Tasks Completed</p>
+              
+              {showMyAgents && address && agent.owner?.toLowerCase() === address.toLowerCase() && (
+                <div className="mt-4 pt-4 border-t border-white/5 flex gap-2 justify-end">
+                    <button onClick={(e) => handleDeregister(e, agent.address)} className="text-[10px] px-3 py-1.5 bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20 rounded-lg uppercase tracking-wider font-bold transition-all">Unstake & Deregister</button>
+                </div>
+              )}
             </div>
           </div>
         ))}

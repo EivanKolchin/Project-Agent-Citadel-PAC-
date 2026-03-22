@@ -4,6 +4,7 @@ import { LuffaSDK } from '../lib/luffa';
 import { Interface, Contract, ethers } from 'ethers';
 import { useEthPrice } from '../hooks/useEthPrice';
 import { useWallet } from '../context/WalletContext';
+import { InfoTooltip } from '../components/InfoTooltip';
 
 const TASK_ESCROW_ABI = [
   "function postTask(string description, uint256 deadline) payable",
@@ -31,6 +32,7 @@ export const Tasks = () => {
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployStep, setDeployStep] = useState(0); 
   const [errorMessage, setErrorMessage] = useState('');
+  const [showMyTasks, setShowMyTasks] = useState(false);
   
   // Routing preferences
   const [routingMode, setRoutingMode] = useState<'auto' | 'manual'>('auto');
@@ -41,10 +43,19 @@ export const Tasks = () => {
     a.name.toLowerCase().includes(agentSearch.toLowerCase()) || 
     a.capabilities.some((c: string) => c.toLowerCase().includes(agentSearch.toLowerCase()))
   );
+  
+  const displayedTasks = tasks.filter(t => !showMyTasks || (address && t.poster?.toLowerCase() === address.toLowerCase()));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if(!desc || !budget) return;
+    
+    const parsedBudget = parseFloat(budget);
+    if (isNaN(parsedBudget) || parsedBudget <= 0) {
+      setErrorMessage("Bounty must be greater than 0.");
+      return;
+    }
+
     if(routingMode === 'manual' && !selectedAgent) {
       setErrorMessage("Please select an agent for manual routing.");
       return;
@@ -152,15 +163,26 @@ let txHash = '';
     <div className="space-y-6">
       <div className="flex justify-between items-end border-b border-slate-800 pb-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-1">Task Ledger</h1>
+          <div className="flex items-center gap-2 mb-1">
+            <h1 className="text-3xl font-bold tracking-tight text-white mb-1">Task Ledger</h1>
+            <InfoTooltip text="Browse pending network tasks waiting for AI execution. All funds are held securely in Web3 escrow until job completion." />
+          </div>
           <p className="text-slate-400 text-sm">Escrow-backed agent jobs across the network.</p>
         </div>
-        <button 
-          onClick={() => setModalOpen(true)}
-          className="bg-white text-black hover:bg-zinc-200 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg"
-        >
-          Post Task
-        </button>
+        <div className="flex gap-4">
+          <button
+             onClick={() => setShowMyTasks(!showMyTasks)}
+             className={`whitespace-nowrap px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg ${showMyTasks ? 'bg-indigo-600 text-white' : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'}`}
+          >
+             {showMyTasks ? 'Showing My Tasks' : 'My Tasks'}
+          </button>
+          <button 
+            onClick={() => setModalOpen(true)}
+            className="bg-white text-black hover:bg-zinc-200 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg"
+          >
+            Post Task
+          </button>
+        </div>
       </div>
 
       <div className="bg-zinc-900/40 border border-white/5 backdrop-blur-md rounded-2xl overflow-hidden shadow-2xl">
@@ -184,7 +206,7 @@ let txHash = '';
                   <td className="p-5 hidden sm:table-cell"><div className="h-4 bg-white/5 rounded w-24"></div></td>
                 </tr>
               ))
-            ) : tasks.map((t, i) => (
+            ) : displayedTasks.map((t, i) => (
               <tr key={t.id || i} className="hover:bg-white/[0.02] transition-colors cursor-pointer group">
                 <td className="p-5">
                   <p className="text-zinc-200 font-medium line-clamp-1 max-w-[300px]">{t.description}</p>
@@ -216,7 +238,7 @@ let txHash = '';
                 </td>
               </tr>
             ))}
-            {!isLoading && tasks.length === 0 && <tr><td colSpan={4} className="p-10 text-center text-zinc-500 font-light">The escrow ledger is empty.</td></tr>}
+            {!isLoading && displayedTasks.length === 0 && <tr><td colSpan={5} className="p-10 text-center text-zinc-500 font-light">The escrow ledger is empty.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -246,7 +268,11 @@ let txHash = '';
                 </div>
                 <div className="relative">
                   <input 
-                    type="number" step="0.01" value={budget} onChange={e => setBudget(e.target.value)}
+                    type="number" step="0.01" min="0.001" value={budget} onChange={e => {
+                      const val = parseFloat(e.target.value);
+                      if (val < 0) setBudget("0");
+                      else setBudget(e.target.value);
+                    }}
                     className="w-full bg-white/5 border border-white/10 rounded-xl p-4 pl-12 text-sm text-white focus:outline-none focus:border-white/30 focus:bg-white/10 transition-all"
                   />
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-light">Ξ</span>

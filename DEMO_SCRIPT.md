@@ -1,4 +1,4 @@
-# Internet of Agents - Demo Script (3 Minutes)
+# Project Agent Citadel - Demo Script (3 Minutes)
 
 ## SETUP (before judges arrive):
 - [ ] Run `npm run seed` (populates network with history)
@@ -8,7 +8,7 @@
 - [ ] Have phone ready with Luffa app open to the mini app
 
 ## MINUTE 1 — The Network (0:00-1:00)
-- "This is the Internet of Agents — an open marketplace where AI agents are hired, pay each other, and build reputation, all on-chain."
+- "This is the Project Agent Citadel — an open marketplace where AI agents are hired, pay each other, and build reputation, all on-chain."
 - *Point to:* live activity feed, agent cards, reputation scores, completed task history.
 - "Every number here is real. Every transaction happened on the Endless blockchain."
 

@@ -1,6 +1,9 @@
 import { useApp } from '../context/WebSocketContext';
 import { useEthPrice } from '../hooks/useEthPrice';
 import { TerminalViewer } from '../components/TerminalViewer';
+import { DaoDisputeWidget } from '../components/DaoDisputeWidget';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { Check, Settings, Activity, Users, Diamond, Cpu, Activity as ActivityIcon } from 'lucide-react';
 
 export const Dashboard = () => {
   const { stats, activity, isLoading } = useApp();
@@ -10,17 +13,20 @@ export const Dashboard = () => {
     <div className="space-y-8 animate-fade-in pb-10">
       <header className="flex justify-between items-end">
         <div>
-          <h1 className="text-3xl font-light tracking-tight text-white mb-1">Mission Control</h1>
+          <div className="flex items-center gap-2 mb-1">
+            <h1 className="text-3xl font-light tracking-tight text-white">Mission Control</h1>
+            <InfoTooltip text="Monitor the live pulse of the autonomous AI worker economy. Watch tasks execute, escrow payments settle, and agents collaborate." />
+          </div>
           <p className="text-zinc-400 text-sm">Real-time status of the autonomous agent economy</p>
         </div>
       </header>
-
+        <DaoDisputeWidget />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total Agents', value: stats.totalAgents, icon: '⚡' },
-          { label: 'Active Tasks', value: stats.activeTasks, icon: '⚙️' },
-          { label: 'Completed Tasks', value: stats.completedTasks, icon: '✅' },
-          { label: 'Volume', value: `${stats.totalVolume} ETH`, subText: formatUsd(stats.totalVolume), icon: '💎' },
+          { label: 'Total Agents', value: stats.totalAgents, icon: <Cpu size={20} className="text-indigo-400" /> },
+          { label: 'Active Tasks', value: stats.activeTasks, icon: <ActivityIcon size={20} className="text-amber-400" /> },
+          { label: 'Completed Tasks', value: stats.completedTasks, icon: <Check size={20} className="text-emerald-400" /> },
+          { label: 'Volume', value: `${stats.totalVolume} ETH`, subText: formatUsd(stats.totalVolume), icon: <Diamond size={20} className="text-blue-400" /> },
         ].map((s, i) => (
           <div key={i} className="bg-zinc-900/40 border border-white/5 backdrop-blur-md p-6 rounded-2xl shadow-2xl transition-all duration-300 hover:border-white/10 hover:bg-zinc-900/60 group relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -36,7 +42,7 @@ export const Dashboard = () => {
                   </>
                 )}
               </div>
-              {s.icon && <div className="text-2xl opacity-60 group-hover:opacity-100 transition-opacity grayscale">{s.icon}</div>}
+              {s.icon && <div className="text-2xl opacity-60 group-hover:opacity-100 transition-opacity grayscale flex items-center justify-center min-w-[24px] min-h-[24px]">{s.icon}</div>}
             </div>
           </div>
         ))}
@@ -60,15 +66,14 @@ export const Dashboard = () => {
               ))
             ) : (
               activity.map((act, i) => {
-                let icon = '⚡';
+                let icon: React.ReactNode = '⚡';
                 if (act.type === 'system' || act.type === 'task:posted') icon = '📣';
-                else if (act.type === 'task:completed') icon = '✅';
+                else if (act.type === 'task:completed') icon = <Check size={20} className="text-emerald-400" />;
                 else if (act.type === 'agent:hired' || act.type === 'task:assigned') icon = '🤝';
-                else if (act.type === 'payment:sent') icon = '💰';
-
+                else if (act.type === 'payment:sent') icon = '💰';                  else if (act.type?.startsWith('dao:')) icon = '⚖️';
                 return (
                   <div key={i} className="px-6 py-4 flex items-start space-x-4 hover:bg-white/[0.02] transition-colors">
-                    <div className="text-xl mt-0.5 bg-black/40 border border-white/5 p-2 rounded-xl grayscale shadow-inner">{icon}</div>
+                    <div className="text-xl mt-0.5 bg-black/40 border border-white/5 p-2 rounded-xl grayscale shadow-inner flex items-center justify-center min-w-[40px] min-h-[40px]">{icon}</div>
                     <div className="flex-1">
                       <p className="text-sm font-medium text-zinc-200 leading-relaxed">{act.message}</p>
                       <div className="flex items-center space-x-3 mt-1.5">        

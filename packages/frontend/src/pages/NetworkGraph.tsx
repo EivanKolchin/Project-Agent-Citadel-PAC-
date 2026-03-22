@@ -1,99 +1,112 @@
 import { useApp } from '../context/WebSocketContext';
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState, useRef } from 'react';
+import ForceGraph2D from 'react-force-graph-2d';
 
-/** Simple SVG graph: escrow hub + agents + edges for assigned tasks. */
+/** Real-time physics-based constellation graph representing the agent network. */
 export const NetworkGraph = () => {
   const { agents, tasks } = useApp();
+  const graphRef = useRef<any>();
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const radius = 160;
-  const center = { x: 300, y: 300 };
-
-  const nodes = useMemo(() => {
-    return agents.map((agent: any, i: number) => {
-      const angle = (i / Math.max(1, agents.length)) * 2 * Math.PI;
-      return {
-        ...agent,
-        x: center.x + radius * Math.cos(angle),
-        y: center.y + radius * Math.sin(angle),
-      };
-    });
-  }, [agents]);
-
-  const edges = useMemo(() => {
-    const e: any[] = [];
-    tasks.forEach((t: any) => {
-      const assignee = t.assignedAgent;
-      if (assignee) {
-        const target = nodes.find((n) => n.address?.toLowerCase() === String(assignee).toLowerCase());
-        if (target) {
-          e.push({
-            id: t.id,
-            source: { x: center.x, y: center.y },
-            target,
-            animated: t.status === 'assigned' || t.status === 'open',
-            completed: t.status === 'completed',
-          });
-        }
+  useEffect(() => {
+    const updateDims = () => {
+      if (containerRef.current) {
+        setDimensions({
+          width: containerRef.current.offsetWidth,
+          height: containerRef.current.offsetHeight
+        });
       }
-    });
-    return e;
-  }, [tasks, nodes]);
+    };
+    window.addEventListener('resize', updateDims);
+    updateDims();
+    return () => window.removeEventListener('resize', updateDims);
+  }, []);
+
+  const graphData = useMemo(() => {
+    const minRep = Math.min(...agents.map(a => a.reputationScore || 0), 0);
+    const maxRep = Math.max(...agents.map(a => a.reputationScore || 0), 10);
+    
+    const nodes = [
+      { id: 'ESCROW', name: 'NETWORK ESCROW', type: 'hub', val: 15 },
+      ...agents.map((agent: any) => ({
+        id: String(agent.address).toLowerCase(),
+        name: agent.name,
+        type: 'agent',
+        status: agent.currentStatus,
+        val: 5 + ((agent.reputationScore || 0) / (maxRep || 1)) * 10
+      }))
+    ];
+
+    const links = tasks
+      .filter((t: any) => t.assignedAgent && ['assigned', 'open'].includes(t.status))
+      .map((t: any) => ({
+        source: 'ESCROW',
+        target: String(t.assignedAgent).toLowerCase(),
+        name: taskIdToName(t),
+        status: t.status
+      }));
+
+    return { nodes, links };
+  }, [agents, tasks]);
+  
+  function taskIdToName(t: any) {
+     return t.description ? t.description.slice(0,15) + "..." : `Task ${t.id}`;
+  }
 
   return (
-    <div className="space-y-8 animate-fade-in pb-10">
-      <header className="border-b border-white/5 pb-6">
-        <h1 className="text-3xl font-light tracking-tight text-white mb-1">Network Graph</h1>
-        <p className="text-zinc-400 text-sm">Escrow hub, registered agents, and active assignment edges</p>
+    <div className="space-y-4 animate-fade-in pb-10 flex flex-col h-[calc(100vh-140px)]">
+      <header className="border-b border-white/5 pb-4 shrink-0">
+        <h1 className="text-3xl font-light tracking-tight text-white mb-1">Network Constellation</h1>
+        <p className="text-zinc-400 text-sm">Real-time physics graph of network topology and escrow edge distribution</p>
       </header>
 
-      <div className="w-full aspect-square md:aspect-video max-h-[600px] bg-zinc-900/40 border border-white/5 backdrop-blur-md rounded-3xl overflow-hidden relative flex items-center justify-center shadow-2xl">
-        <svg viewBox="0 0 600 600" className="w-full h-full max-w-full max-h-full">
-          <defs>
-            <radialGradient id="nodeGrad" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.1" />
-              <stop offset="100%" stopColor="#0a0a0a" stopOpacity="0" />
-            </radialGradient>
-          </defs>
-
-          {edges.map((edge, i) => (
-            <line
-              key={`edge-${i}`}
-              x1={edge.source.x}
-              y1={edge.source.y}
-              x2={edge.target.x}
-              y2={edge.target.y}
-              stroke={edge.completed ? '#3f3f46' : '#ffffff'}
-              strokeWidth="1.5"
-              strokeDasharray={edge.animated ? '4 4' : 'none'}
-              className={edge.animated ? 'animate-[dash_1.5s_linear_infinite]' : ''}
-              opacity={edge.completed ? '0.3' : '0.4'}
-            />
-          ))}
-
-          <circle cx={center.x} cy={center.y} r={28} fill="#0a0a0a" stroke="#ffffff" strokeWidth="2" opacity="0.8" />
-          <circle cx={center.x} cy={center.y} r={48} fill="none" stroke="#ffffff" strokeWidth="1" opacity="0.1" className="animate-ping" />
-          <text x={center.x} y={center.y + 3} textAnchor="middle" fill="#d4d4d8" fontSize="9" fontWeight="600" letterSpacing="0.05em" className="pointer-events-none uppercase">
-            ESCROW
-          </text>
-
-          {nodes.map((node: any) => (
-            <g key={node.address} className="transition-transform duration-500 hover:scale-[1.02] cursor-pointer">
-              <circle cx={node.x} cy={node.y} r={32} fill="url(#nodeGrad)" />
-              <circle cx={node.x} cy={node.y} r={18} fill="#0a0a0a" stroke="#a1a1aa" strokeWidth="1" />
-              <text x={node.x} y={node.y + 36} textAnchor="middle" fill="#a1a1aa" fontSize="11" fontWeight="400">
-                {node.name}
-              </text>
-              {node.currentStatus === 'busy' && (
-                <circle cx={node.x + 14} cy={node.y - 14} r={4} fill="#ffffff" className="animate-pulse shadow-[0_0_10px_rgba(255,255,255,0.5)]" />
-              )}
-            </g>
-          ))}
-        </svg>
-        <style>{`
-          @keyframes dash {
-            to { stroke-dashoffset: -8; }
-          }
-        `}</style>
+      <div 
+        ref={containerRef}
+        className="w-full flex-1 bg-zinc-950/80 border border-white/5 backdrop-blur-md rounded-3xl overflow-hidden relative shadow-2xl"
+      >
+        <ForceGraph2D
+          ref={graphRef}
+          width={dimensions.width}
+          height={dimensions.height}
+          graphData={graphData}
+          nodeLabel="name"
+          nodeColor={node => node.type === 'hub' ? '#ffffff' : (node.status === 'busy' ? '#4ade80' : '#4f46e5')}
+          nodeRelSize={1}
+          linkColor={() => '#ffffff40'}
+          linkWidth={1.5}
+          linkDirectionalParticles={2}
+          linkDirectionalParticleSpeed={0.005}
+          nodeCanvasObject={(node: any, ctx, globalScale) => {
+            const label = node.name;
+            const fontSize = node.type === 'hub' ? 14/globalScale : 12/globalScale;
+            ctx.font = `${fontSize}px Sans-Serif`;
+            const textWidth = ctx.measureText(label).width;
+            const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2); 
+            
+            ctx.fillStyle = node.type === 'hub' ? 'rgba(255, 255, 255, 0.9)' : (node.status === 'busy' ? 'rgba(74, 222, 128, 0.9)' : 'rgba(79, 70, 229, 0.9)');
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, node.val, 0, 2 * Math.PI, false);
+            ctx.fill();
+            
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(label, node.x, node.y + node.val + fontSize);
+          }}
+          cooldownTicks={100}
+          onEngineStop={() => {
+            if (graphRef.current) {
+                graphRef.current.zoomToFit(400, 50);
+            }
+          }}
+        />
+        
+        <div className="absolute bottom-4 left-4 flex gap-4 pointer-events-none">
+           <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#4f46e5]"></div><span className="text-xs text-zinc-400">Idle Agent</span></div>
+           <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#4ade80]"></div><span className="text-xs text-zinc-400">Active Task</span></div>
+           <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-white"></div><span className="text-xs text-zinc-400">Escrow Hub</span></div>
+        </div>
       </div>
     </div>
   );

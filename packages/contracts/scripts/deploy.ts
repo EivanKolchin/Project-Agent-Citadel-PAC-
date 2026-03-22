@@ -68,16 +68,16 @@ async function main() {
   fs.writeFileSync(backendConfigPath, backendConfigConfig);
   console.log("Backend contracts configuration updated!");
 
-  // 6. Pre-Register the 3 Luffa Worker Bots automatically!
+  // 6. Pre-Register the Luffa Worker Bots automatically!
   console.log("\nRegistering Luffa Bot Identities to Blockchain Mock...");
   const bots = DEMO_LUFFA_BOTS_FOR_DEPLOY.map((b) => ({ ...b, caps: [...b.caps] }));
 
-  // Create 3 sub-wallets to act as the agent addresses via Hardhat's secondary signers
+  // Create sub-wallets to act as the agent addresses via Hardhat's secondary signers
   const signers = await ethers.getSigners();
 
   for (let i = 0; i < bots.length; i++) {
     const bot = bots[i];
-    const botWallet = signers[i + 1]; // Use wallets 1, 2, 3
+    const botWallet = signers[i + 1]; // Offset by 1 to skip deployer
     const botRegistry = agentRegistry.connect(botWallet) as any;
     
     // The endpoint points back to our own backend Luffa proxy! 

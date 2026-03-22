@@ -54,7 +54,7 @@ export class Orchestrator {
         });
         this.eventEmitter.emit("activity", { type: "agent:hired", message: `${agent.name} hired for task ${taskId}` });
 
-        const res = await withRetry(() => axios.post(`${agent.endpoint}/execute`, { taskId, description }), 3, 500, `Agent Execution (${agent.name})`);
+        const res = await withRetry(() => axios.post(`${agent.endpoint}/execute`, { taskId, description }, { timeout: 60000 }), 3, 500, `Agent Execution (${agent.name})`);
         return { result: res.data.result, agent: assignedAgent! };
       } catch (e: any) {
         console.error(`[${new Date().toISOString()}] Agent ${agent.name} failed. Removing from active roster and retrying...`, e.message);
@@ -86,6 +86,13 @@ export class Orchestrator {
          this.eventEmitter.emit("activity", { type: "system", message: `Task ${taskId} is manually targeted to ${manualTargetAddress}` });
       }
 
+      // Safety Guardrails Check
+      const isSafe = await this.router.isPromptSafe(cleanDescription);
+      if (!isSafe) {
+        this.eventEmitter.emit("activity", { type: "error", message: `Task ${taskId} rejected by Safety Guardrails for unsafe intent or restricted toolkits.` });
+        throw new Error("Task rejected by Safety Guardrails. Unsafe prompt detected.");
+      }
+
       const shouldDecompose = !manualTargetAddress && await this.router.shouldDecompose(cleanDescription);
       let finalResult: TaskResult;
       let assignedAgent: string = "";
@@ -105,9 +112,13 @@ export class Orchestrator {
           let combinedConfidence = 0;
           let subTasksUsed: string[] = [];
 
-          for (let i = 0; i < subtasks.length; i++) {
-             const subDesc = subtasks[i];
+          const subtaskPromises = subtasks.map(async (subDesc, i) => {
              const res = await this.assignAndExecute(agents, `sub-${taskId}-${i}`, subDesc);
+             return { subDesc, res };
+          });
+          const completedSubtasks = await Promise.all(subtaskPromises);
+
+          for (const { subDesc, res } of completedSubtasks) {
              fullContent += `\n### ${subDesc}\n${res.result.content}\n`;
              combinedConfidence += res.result.confidence;
              subTasksUsed.push(res.agent);
@@ -134,8 +145,64 @@ export class Orchestrator {
       // Run QA Validation Step
       const validation = await this.router.validateResult(cleanDescription, finalResult.content);
       if (!validation.isValid) {
+         this.eventEmitter.emit("activity", { type: "dao:dispute_start", taskId, message: `Task ${taskId} QA failed (${validation.reason}). Summoning Network DAO Nodes for consensus...` });
+
+         // Fetch max 3 random idle agents to act as judges
+         let otherAgents = agents.filter(a => a.address.toLowerCase() !== assignedAgent.toLowerCase());
+         let daoJudges = otherAgents.sort(() => 0.5 - Math.random()).slice(0, 3);
+         
+         if (daoJudges.length > 0) {
+             let yesVotes = 0;
+             let noVotes = 0;
+             
+             for (const judge of daoJudges) {
+                try {
+                  this.eventEmitter.emit("activity", { type: "agent:thought", agent: judge.name, taskId, message: `Reviewing task ${taskId} as DAO Judge...` });
+                  const judgePrompt = `As a decentralized network DAO Judge, evaluate if the following output successfully satisfies the original task description.
+Respond strictly in JSON format: {"isValid": boolean, "reason": "1 sentence explanation"}
+Task: ${cleanDescription}
+Result: ${finalResult.content}`;
+
+                  const passRes = await axios.post(`${judge.endpoint}/execute`, { taskId: `${taskId}-judge`, description: judgePrompt }, { timeout: 30000 });
+                  const passContent = passRes.data.result?.content || passRes.data;
+                  const jsonMatch = passContent.match(/\{[\s\S]*\}/);
+                  const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : passContent);
+                  
+                  if (parsed.isValid) {
+                      yesVotes++;
+                      this.eventEmitter.emit("activity", { type: "dao:vote", judge: judge.name, vote: "VALID", reason: parsed.reason, message: `DAO Judge ${judge.name} voted: VALID (${parsed.reason})` });
+                  } else {
+                      noVotes++;
+                      this.eventEmitter.emit("activity", { type: "dao:vote", judge: judge.name, vote: "INVALID", reason: parsed.reason, message: `DAO Judge ${judge.name} voted: INVALID (${parsed.reason})` });
+                  }
+                } catch(e: any) {
+                  noVotes++; // abstain defaults to rejecting the agent
+                  this.eventEmitter.emit("activity", { type: "dao:vote", judge: judge.name, vote: "INVALID", reason: "Judge offline or abstained", message: `DAO Judge ${judge.name} abstained/failed.` });
+                }
+             }
+             
+             if (yesVotes > noVotes) {
+                 this.eventEmitter.emit("activity", { type: "dao:dispute_end", result: "Agent Vindicated", message: `DAO Consensus Reached (${yesVotes} to ${noVotes}). Overriding router failure.` });
+                 validation.isValid = true; // Override
+             } else {
+                 this.eventEmitter.emit("activity", { type: "dao:dispute_end", result: "Failure Upheld", message: `DAO Consensus Upheld Failure (${noVotes} to ${yesVotes}). Proceeding with slash.` });
+             }
+         } else {
+            this.eventEmitter.emit("activity", { type: "system", message: "No other agents available for DAO Voting. Upholding AI router failure." });
+         }
+      }
+
+      if (!validation.isValid) {
          this.eventEmitter.emit("activity", { type: "error", message: `Task ${taskId} failed validation: ${validation.reason}` });
-         // Trigger Task failure on chain here theoretically, but let's just abort for now
+
+         // Trigger Task failure on chain, punishes agent reputation & refunds user
+         try {
+             await this.blockchain.failTask(taskId);
+             this.eventEmitter.emit("activity", { type: "system", message: `Task ${taskId} officially failed on-chain. Escrow Refunded.` });
+         } catch(e: any) {
+             console.error("Failed to push failTask on-chain:", e.message);
+         }
+
          throw new Error(`Agent failed QA Validation: ${validation.reason}`);
       }
 
@@ -151,6 +218,13 @@ export class Orchestrator {
       console.error(`[${new Date().toISOString()}] Orchestrator failed on task ${taskId}:`, error);
       this.eventEmitter.emit("task:failed", { taskId, reason: error.message });
       this.eventEmitter.emit("activity", { type: "error", message: `Task ${taskId} failed: ${error.message}` });
+      
+      // If the overarching orchestrator loop crashes and the task was already assigned but never completed, fail it to un-lock escrow.
+      try {
+         await this.blockchain.failTask(taskId);
+      } catch (e: any) {
+         console.warn(`Could not fail task ${taskId} on chain. It might still be open or already failed.`, e.message);
+      }
     }
   }
 }

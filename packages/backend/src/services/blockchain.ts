@@ -179,8 +179,14 @@ export class BlockchainService {
         // Log is not from this contract or not parsable
       }
     }
-    
+
     throw new Error("TaskPosted event not found in transaction receipt");
+  }
+
+  async failTask(taskId: string): Promise<void> {
+    if (!(await this.ensureRpcAvailable())) return;
+    const tx = await this.withTimeout(this.taskEscrow.failTask(BigInt(taskId)));
+    await tx.wait();
   }
 
   async assignTask(taskId: string, agentAddress: string): Promise<void> {

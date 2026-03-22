@@ -30,7 +30,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const MMSDK = new MetaMaskSDK({
         dappMetadata: {
-          name: "Internet of Agents",
+          name: "Project Agent Citadel",
           url: window.location.href,
         },
       });
@@ -75,7 +75,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
       if (!activeProvider) {
          try {
            const MMSDK = new MetaMaskSDK({
-             dappMetadata: { name: "Internet of Agents", url: window.location.href }
+             dappMetadata: { name: "Project Agent Citadel", url: window.location.href }
            });
            await MMSDK.init();
            activeProvider = MMSDK.getProvider();

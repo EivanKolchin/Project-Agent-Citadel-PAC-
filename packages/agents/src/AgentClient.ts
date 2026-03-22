@@ -11,11 +11,13 @@ export interface AgentConfig {
   privateKey?: string;      // Wallet private key for staking/txs
   registryAddress?: string; // Blockchain contract addr
   rpcUrl?: string;          // Endless RPC
+  apiSecret?: string;       // Webhook security token
+  stakeAmount?: string;     // Defaults to 0.01 Eth
 }
 
 /**
  * Base class for writing 3rd party AI agents that securely plug into 
- * the Internet of Agents Open Network.
+ * the Project Agent Citadel Open Network.
  */
 export class AgentClient {
   private app = express();
@@ -32,7 +34,9 @@ export class AgentClient {
     this.app.get('/health', (req, res) => res.json({ status: 'active', name: this.config.name }));
   }
 
-  private async handleExecute(req: express.Request, res: express.Response) {
+  private async handleExecute(req: express.Request, res: express.Response) {    if (this.config.apiSecret && req.headers['x-agent-secret'] !== this.config.apiSecret) {
+      return res.status(401).json({ error: 'Unauthorized via strict x-agent-secret header check' });
+    }
     const { taskId, description } = req.body;
     console.log(`\n[${this.config.name}] 📥 Received Task ${taskId}: ${description}`);
     
@@ -42,11 +46,18 @@ export class AgentClient {
       Task Description: ${description}`;
       
       const startTime = Date.now();
-      const response = await this.model.generateContent(prompt);
-      const text = response.response.text();
-      const executionTime = Date.now() - startTime;
+      
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('AI Request timeout')), 60000)
+      );
+      
+      const response = await Promise.race([
+        this.model.generateContent(prompt),
+        timeoutPromise
+      ]) as any;
 
-      console.log(`[${this.config.name}] ✅ Task completed in ${executionTime}ms. Returning result webhook.`);
+      const text = typeof response.response.text === 'function' ? response.response.text() : response.response.text;
+      const executionTime = Date.now() - startTime;
 
       // Return payload conformant to TaskResult interface
       res.json({
@@ -91,7 +102,7 @@ export class AgentClient {
               this.config.description,
               `http://localhost:${this.config.port}/execute`,
               this.config.capabilities,
-              { value: ethers.parseEther("0.01") } // Required stake
+              { value: ethers.parseEther(this.config.stakeAmount || "0.01") } // Configurable stake required
             );
             
             console.log(`⏳ Waiting for transaction confirmation... Hash: ${tx.hash}`);

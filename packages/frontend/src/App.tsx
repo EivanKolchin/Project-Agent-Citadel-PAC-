@@ -4,9 +4,9 @@ import { Dashboard } from './pages/Dashboard';
 import { Agents } from './pages/Agents';
 import { Tasks } from './pages/Tasks';
 import { Settings } from './pages/Settings';
-import { Activity, Users, CheckSquare, Settings as SettingsIcon, GitMerge } from 'lucide-react';
+import { Activity, Users, CheckSquare, Settings as SettingsIcon, GitMerge, User, LogOut, Droplet } from 'lucide-react';
 import { NetworkGraph } from './pages/NetworkGraph';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { WalletProvider, useWallet } from './context/WalletContext';
 import { Wallet } from 'lucide-react';
 
@@ -82,27 +82,145 @@ const DummyModeBanner = () => {
   if (!isDummy) return null;
 
   return (
-    <div className="bg-amber-500/10 backdrop-blur-md text-amber-400 text-[10px] font-medium tracking-widest uppercase text-center py-2 w-full flex items-center justify-center space-x-3 z-40 border-b border-amber-500/20">
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-      <span>Testnet Simulated Environment Active</span>
+    <div className="bg-amber-500/10 backdrop-blur-md text-amber-400 text-xs font-medium tracking-widest text-center py-2.5 px-4 w-full flex flex-col sm:flex-row items-center justify-center sm:space-x-4 z-40 border-b border-amber-500/20 shadow-lg">
+      <div className="flex items-center space-x-2 mb-2 sm:mb-0 uppercase">
+        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+        <span>You are in Dummy Mode</span>
+      </div>
+      <button 
+        onClick={() => {
+          localStorage.removeItem('dummy_mode');
+          window.dispatchEvent(new Event('storage'));
+        }}
+        className="bg-amber-500 text-black hover:bg-amber-400 text-xs font-bold py-1.5 px-4 rounded-lg transition-all shadow-md active:scale-95"
+      >
+        Revert to Real Wallet
+      </button>
     </div>
   );
 };
 
 const WalletWidget = () => {
   const { address, connect, disconnect } = useWallet();
+  const [faucetLoading, setFaucetLoading] = useState(false);
+
+  const requestFaucet = async () => {
+    if (!address) return;
+    setFaucetLoading(true);
+    try {
+      await fetch('http://localhost:3001/api/faucet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address })
+      });
+      alert("Test ETH requested successfully!");
+    } catch(e) {
+      alert("Failed to request from faucet.");
+    } finally {
+      setFaucetLoading(false);
+    }
+  };
+
   return (
-    <div className="absolute top-4 right-4 z-50 pointer-events-auto">
+    <div className="z-50 pointer-events-auto flex items-center gap-2">
       {address ? (
-        <button onClick={disconnect} className="flex items-center space-x-2 bg-zinc-900/80 border border-white/10 px-4 py-2 rounded-xl text-xs font-mono text-zinc-300 hover:bg-zinc-800 transition-colors backdrop-blur-md">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>{address.slice(0,6)}...{address.slice(-4)}</span>
-        </button>
+        <>
+          <button 
+            onClick={requestFaucet} 
+            disabled={faucetLoading}
+            title="Get Test ETH from Faucet"
+            className="flex items-center justify-center bg-indigo-500/10 border border-indigo-500/20 w-8 h-8 rounded-xl text-indigo-400 hover:bg-indigo-500/20 transition-colors backdrop-blur-md disabled:opacity-50">
+            <Droplet size={14} className={faucetLoading ? "animate-pulse" : ""} />
+          </button>
+          <button onClick={disconnect} className="flex items-center space-x-2 bg-zinc-900/80 border border-white/10 px-4 py-2 rounded-xl text-xs font-mono text-zinc-300 hover:bg-zinc-800 transition-colors backdrop-blur-md">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>{address.slice(0,6)}...{address.slice(-4)}</span>
+          </button>
+        </>
       ) : (
         <button onClick={connect} className="flex items-center space-x-2 bg-blue-500/10 border border-blue-500/20 px-4 py-2 rounded-xl text-xs font-mono text-blue-400 hover:bg-blue-500/20 transition-colors backdrop-blur-md">
           <Wallet size={14} />
           <span>Connect Web3</span>
         </button>
+      )}
+    </div>
+  );
+};
+
+const ProfileWidget = () => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  
+  const [userName, setUserName] = useState(localStorage.getItem('pac_profile_name') || 'Operator');
+  const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('pac_logged_in') === 'true');
+
+  useEffect(() => {
+    const handleStorage = () => {
+      setUserName(localStorage.getItem('pac_profile_name') || 'Operator');
+      setIsLoggedIn(localStorage.getItem('pac_logged_in') === 'true');
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative z-50 pointer-events-auto" ref={dropdownRef}>
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center justify-center w-10 h-10 bg-zinc-900/80 border border-white/10 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors backdrop-blur-md"
+      >
+        <User size={18} />
+      </button>
+      
+      {isOpen && (
+        <div className="absolute right-0 mt-2 w-56 bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden py-1 animate-in fade-in slide-in-from-top-2">
+          {isLoggedIn ? (
+            <>
+              <div className="px-4 py-3 border-b border-white/5">
+                <p className="text-xs text-zinc-400 font-medium">Signed in as</p>
+                <p className="text-sm text-white font-semibold truncate">{userName}</p>
+              </div>
+              <div className="py-1">
+                <Link to="/settings" onClick={() => setIsOpen(false)} className="flex items-center px-4 py-2.5 text-sm text-zinc-300 hover:bg-white/5 hover:text-white transition-colors">
+                  <SettingsIcon size={14} className="mr-3 text-zinc-500" />
+                  Account Settings
+                </Link>
+                <button 
+                  onClick={() => {
+                    localStorage.setItem('pac_logged_in', 'false');
+                    window.dispatchEvent(new Event('storage'));
+                    setIsOpen(false);
+                  }}
+                  className="w-full flex items-center px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <LogOut size={14} className="mr-3" />
+                  Sign Out
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="py-2 px-4 space-y-3">
+              <p className="text-xs text-zinc-400">Sign in to manage your profile.</p>
+              <Link 
+                to="/settings" 
+                onClick={() => setIsOpen(false)}
+                className="w-full flex items-center justify-center bg-white text-black hover:bg-zinc-200 text-sm font-semibold py-2 px-4 rounded-xl transition-all"
+              >
+                Sign In
+              </Link>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -131,7 +249,10 @@ export default function App() {
             <ConnectionBanner />
             <DummyModeBanner />
           </div>
-          <WalletWidget />
+          <div className="absolute top-4 right-4 z-50 flex items-center space-x-3 pointer-events-none">
+            <WalletWidget />
+            <ProfileWidget />
+          </div>
           <Navigation />
           <main className={`max-w-7xl mx-auto p-4 md:p-8 transition-transform duration-500 relative z-10 ${isDummy ? 'translate-y-6 sm:translate-y-2' : ''}`}>  
             <Routes>

@@ -31,7 +31,7 @@ const wss = new WebSocketServer({ server });
 
 const eventEmitter = new EventEmitter();
 const router = new RouterAgent();
-const luffaWorker = new LuffaWorkerAgent();
+const luffaWorker = new LuffaWorkerAgent(eventEmitter);
 
 // Boot Phase: Environment Validation
 const recommendedEnvVars = ["ENDLESS_RPC_URL", "DEPLOYER_PRIVATE_KEY", "GEMINI_API_KEY"];
@@ -110,28 +110,40 @@ setInterval(() => {
 }, 30000);
 
 // --- Luffa Bot Execution Endpoints ---
+// Error handling wrapped bot registration
 app.post("/api/agents/register", (req, res) => {
-  const { uid, secret, name, capabilities } = req.body;
-  if (!uid || !secret || !name) {
-    return res.status(400).json({ error: "Missing required fields" });
+  try {
+    const { uid, secret, name, capabilities } = req.body;
+    
+    // Validate required types and shape
+    if (!uid || typeof uid !== 'string' || !secret || typeof secret !== 'string' || !name || typeof name !== 'string') {
+      return res.status(400).json({ error: "Missing or invalid required fields (uid, secret, name must be strings)." });
+    }
+
+    if (capabilities && !Array.isArray(capabilities)) {
+      return res.status(400).json({ error: "Capabilities must be an array of strings." });
+    }
+
+    const existingIndex = LUFFA_BOTS.findIndex(b => b.uid === uid);
+    const newConfig = {
+      uid,
+      secret,
+      name,
+      capabilities: capabilities || ["general"]
+    };
+
+    if (existingIndex >= 0) {
+      LUFFA_BOTS[existingIndex] = newConfig;
+    } else {
+      LUFFA_BOTS.push(newConfig);
+    }
+
+    console.log(`[Agent Endpoint] Registered Custom UI Bot: ${name} (${uid})`);
+    res.json({ success: true, agent: newConfig });
+  } catch (error: any) {
+    console.error("[Agent Endpoint] Registration Error:", error.message);
+    res.status(500).json({ error: "Internal server error during agent registration." });
   }
-  
-  const existingIndex = LUFFA_BOTS.findIndex(b => b.uid === uid);
-  const newConfig = {
-    uid,
-    secret,
-    name,
-    capabilities: capabilities || ["general"]
-  };
-  
-  if (existingIndex >= 0) {
-    LUFFA_BOTS[existingIndex] = newConfig;
-  } else {
-    LUFFA_BOTS.push(newConfig);
-  }
-  
-  console.log(`[Agent Endpoint] Registered Custom UI Bot: ${name} (${uid})`);
-  res.json({ success: true, agent: newConfig });
 });
 
 app.post("/api/luffa/:uid/execute", async (req, res) => {
