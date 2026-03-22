@@ -4,8 +4,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Agents } from './pages/Agents';
 import { Tasks } from './pages/Tasks';
 import { Settings } from './pages/Settings';
-import { Activity, Users, CheckSquare, Settings as SettingsIcon, GitMerge, User, LogOut, Droplet } from 'lucide-react';
-import { NetworkGraph } from './pages/NetworkGraph';
+import { Activity, Users, CheckSquare, Settings as SettingsIcon, User, LogOut } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { WalletProvider, useWallet } from './context/WalletContext';
 import { Wallet } from 'lucide-react';
@@ -28,7 +27,6 @@ const Navigation = () => (
       <NavLink to="/" icon={Activity} label="Status" />
       <NavLink to="/agents" icon={Users} label="Agents" />
       <NavLink to="/tasks" icon={CheckSquare} label="Tasks" />
-      <NavLink to="/graph" icon={GitMerge} label="Network" />
       <NavLink to="/settings" icon={SettingsIcon} label="Settings" />
     </div>
   </nav>
@@ -44,94 +42,13 @@ const ConnectionBanner = () => {
   );
 };
 
-const DummyModeBanner = () => {
-  const { provider } = useWallet();
-  const { config } = useApp();
-  const [isDummy, setIsDummy] = useState(() => {
-    if (provider) return false;
-    return localStorage.getItem('dummy_mode') === 'true';
-  });
-
-  useEffect(() => {
-    if (provider || config?.rpcConnected) {
-       localStorage.removeItem('dummy_mode');
-       setIsDummy(false);
-       window.dispatchEvent(new Event('storage'));
-    }
-  }, [provider, config]);
-
-  useEffect(() => {
-    const handleStorage = () => setIsDummy(localStorage.getItem('dummy_mode') === 'true');
-    window.addEventListener('storage', handleStorage);
-    const interval = setInterval(() => {
-      const mode = localStorage.getItem('dummy_mode') === 'true';
-      if ((provider || config?.rpcConnected) && mode) {
-        localStorage.removeItem('dummy_mode');
-        setIsDummy(false);
-        window.dispatchEvent(new Event('storage'));
-      } else {
-        setIsDummy(mode);
-      }
-    }, 2000);
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      clearInterval(interval);
-    };
-  }, [provider, config]);
-
-  if (!isDummy) return null;
-
-  return (
-    <div className="bg-amber-500/10 backdrop-blur-md text-amber-400 text-xs font-medium tracking-widest text-center py-2.5 px-4 w-full flex flex-col sm:flex-row items-center justify-center sm:space-x-4 z-40 border-b border-amber-500/20 shadow-lg">
-      <div className="flex items-center space-x-2 mb-2 sm:mb-0 uppercase">
-        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-        <span>You are in Dummy Mode</span>
-      </div>
-      <button 
-        onClick={() => {
-          localStorage.removeItem('dummy_mode');
-          window.dispatchEvent(new Event('storage'));
-        }}
-        className="bg-amber-500 text-black hover:bg-amber-400 text-xs font-bold py-1.5 px-4 rounded-lg transition-all shadow-md active:scale-95"
-      >
-        Revert to Real Wallet
-      </button>
-    </div>
-  );
-};
-
 const WalletWidget = () => {
   const { address, connect, disconnect } = useWallet();
-  const [faucetLoading, setFaucetLoading] = useState(false);
-
-  const requestFaucet = async () => {
-    if (!address) return;
-    setFaucetLoading(true);
-    try {
-      await fetch('http://localhost:3001/api/faucet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address })
-      });
-      alert("Test ETH requested successfully!");
-    } catch(e) {
-      alert("Failed to request from faucet.");
-    } finally {
-      setFaucetLoading(false);
-    }
-  };
 
   return (
     <div className="z-50 pointer-events-auto flex items-center gap-2">
       {address ? (
         <>
-          <button 
-            onClick={requestFaucet} 
-            disabled={faucetLoading}
-            title="Get Test ETH from Faucet"
-            className="flex items-center justify-center bg-indigo-500/10 border border-indigo-500/20 w-8 h-8 rounded-xl text-indigo-400 hover:bg-indigo-500/20 transition-colors backdrop-blur-md disabled:opacity-50">
-            <Droplet size={14} className={faucetLoading ? "animate-pulse" : ""} />
-          </button>
           <button onClick={disconnect} className="flex items-center space-x-2 bg-zinc-900/80 border border-white/10 px-4 py-2 rounded-xl text-xs font-mono text-zinc-300 hover:bg-zinc-800 transition-colors backdrop-blur-md">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span>{address.slice(0,6)}...{address.slice(-4)}</span>
@@ -227,39 +144,26 @@ const ProfileWidget = () => {
 };
   
 export default function App() {
-  const [isDummy, setIsDummy] = useState(localStorage.getItem('dummy_mode') === 'true');
-
-  useEffect(() => {
-    const handleStorage = () => setIsDummy(localStorage.getItem('dummy_mode') === 'true');
-    window.addEventListener('storage', handleStorage);
-    const interval = setInterval(handleStorage, 2000);
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      clearInterval(interval);
-    };
-  }, []);
 
   return (
     <AppProvider>
       <WalletProvider>
       <BrowserRouter>
-        <div className={`min-h-screen pb-24 sm:pt-16 sm:pb-0 font-sans relative transition-colors duration-700 bg-[#0a0a0a] text-zinc-300 ${isDummy ? 'bg-gradient-to-b from-[#14120f] to-[#0a0a0a]' : ''}`}>
+        <div className={`min-h-screen pb-24 sm:pt-16 sm:pb-0 font-sans relative transition-colors duration-700 bg-[#0a0a0a] text-zinc-300`}>
           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none mix-blend-overlay"></div>
           <div className="absolute top-0 left-0 w-full z-50 flex flex-col pointer-events-auto">
             <ConnectionBanner />
-            <DummyModeBanner />
           </div>
           <div className="absolute top-4 right-4 z-50 flex items-center space-x-3 pointer-events-none">
             <WalletWidget />
             <ProfileWidget />
           </div>
           <Navigation />
-          <main className={`max-w-7xl mx-auto p-4 md:p-8 transition-transform duration-500 relative z-10 ${isDummy ? 'translate-y-6 sm:translate-y-2' : ''}`}>  
+          <main className={`max-w-7xl mx-auto p-4 md:p-8 transition-transform duration-500 relative z-10`}>  
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/agents" element={<Agents />} />
               <Route path="/tasks" element={<Tasks />} />
-              <Route path="/graph" element={<NetworkGraph />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </main>

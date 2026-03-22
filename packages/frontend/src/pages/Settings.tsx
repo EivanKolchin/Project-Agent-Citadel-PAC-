@@ -14,7 +14,6 @@ export const Settings = () => {
   const [balance, setBalance] = useState<string>('0.00');
   const [isLoading, setIsLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'error' | 'success', text: string } | null>(null);
-  const [isDummyMode, setIsDummyMode] = useState<boolean>(false);
   const [isQrExpanded, setIsQrExpanded] = useState<boolean>(false);
   const [profileName, setProfileName] = useState<string>(localStorage.getItem('pac_profile_name') || 'Agent Operator');
   const [profileEmail, setProfileEmail] = useState<string>(localStorage.getItem('pac_profile_email') || 'operator@pac.network');
@@ -24,15 +23,8 @@ export const Settings = () => {
   const location = useLocation();
 
   useEffect(() => {
-    setIsDummyMode(localStorage.getItem('dummy_mode') === 'true');
-    const onStorageChange = () => setIsDummyMode(localStorage.getItem('dummy_mode') === 'true');
-    window.addEventListener('storage', onStorageChange);
-    return () => window.removeEventListener('storage', onStorageChange);
-  }, []);
-
-  useEffect(() => {
     loadWalletData();
-  }, [isDummyMode, walletAddress, walletProvider]);
+  }, [walletAddress, walletProvider]);
 
   const loadWalletData = async () => {
     try {
@@ -76,34 +68,6 @@ export const Settings = () => {
   const handleGenerateNew = () => {
     const wallet = ethers.Wallet.createRandom();
     setPrivateKeyInput(wallet.privateKey);
-  };
-
-  const handleSeedFunds = async () => {
-    setIsLoading(true);
-    setStatusMsg(null);
-    try {
-      // Create a random wallet if address is not present to allow seeding without wallet setup
-      const targetAddress = address || ethers.Wallet.createRandom().address;
-      await LuffaSDK.requestFaucetFunds(targetAddress);
-      
-      localStorage.setItem('dummy_mode', 'true');
-      setIsDummyMode(true);
-      
-      // If we didn't have a wallet, we might want to automatically log them in with a new key
-      // but the user just asked "make it not need wallet id". We can generate a new wallet on the fly and save it.
-      if (!address) {
-        const wallet = ethers.Wallet.createRandom();
-        localStorage.setItem('luffa_agent_key', wallet.privateKey);
-      }
-      
-      window.dispatchEvent(new Event('storage'));
-      setStatusMsg({ type: 'success', text: 'Success! Your wallet was seeded with 10 Dummy ETH.' });
-      loadWalletData();
-    } catch (e: any) {
-      setStatusMsg({ type: 'error', text: 'Faucet failed: ' + e.message });
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   const handleSaveProfile = () => {
@@ -328,30 +292,6 @@ export const Settings = () => {
                 )}
               </div>
             </div>
-            
-            {isDummyMode ? (
-              <button
-                id="dummy"
-                onClick={() => {
-                  localStorage.removeItem('dummy_mode');
-                  setIsDummyMode(false);
-                  window.dispatchEvent(new Event('storage'));
-                  setStatusMsg({ type: 'success', text: 'Returned to Normal Mode.' });
-                  if (location.hash === '#dummy') window.location.hash = '';
-                }}
-                className={`mt-4 text-xs font-semibold py-2.5 px-5 rounded-xl transition-all shadow-lg relative z-10 ${location.hash === '#dummy' ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/30 animate-[pulse_2s_ease-in-out_infinite]' : 'bg-zinc-800 text-white hover:bg-zinc-700 border border-white/10'}`}
-              >
-                Return to Normal Mode
-              </button>
-            ) : (
-              <button
-                onClick={handleSeedFunds}
-                disabled={isLoading || parseFloat(balance) > 0}
-                className="mt-4 text-xs bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:bg-white/10 disabled:text-zinc-500 disabled:cursor-not-allowed font-semibold py-2.5 px-5 rounded-xl transition-all shadow-lg relative z-10"
-              >
-                Seed 10 Dummy ETH
-              </button>
-            )}
           </div>
 
           {/* Import Wallet Form */}

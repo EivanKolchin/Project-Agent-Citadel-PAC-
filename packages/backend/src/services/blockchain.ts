@@ -119,15 +119,6 @@ export class BlockchainService {
     }
   }
 
-  async fundAddress(address: string, amountEth: string): Promise<void> {
-    if (!(await this.ensureRpcAvailable())) return;
-    const tx = await this.withTimeout(this.signer.sendTransaction({
-        to: address,
-        value: ethers.parseEther(amountEth)
-    }));
-    await tx.wait();
-  }
-
   async getAllAgents(): Promise<Agent[]> {
     if (!AGENT_REGISTRY_ADDRESS) return [];
     if (!(await this.ensureRpcAvailable())) return [];

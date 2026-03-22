@@ -266,17 +266,6 @@ app.get("/api/tasks", async (req, res) => {
   }
 });
 
-app.post("/api/faucet", async (req, res) => {
-  const { address } = req.body;
-  if (!blockchain) return res.status(503).json({ error: "Blockchain not connected" });
-  try {
-    await blockchain.fundAddress(address, "10.0");
-    res.json({ success: true, message: "10 ETH seeded" });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 app.post("/api/tasks", async (req, res) => {
   if (!blockchain || !orchestrator) return res.status(503).json({ error: "Blockchain not connected" });
   const { description, budgetEth } = req.body;

@@ -45,17 +45,6 @@ class LuffaSDKWrapper {
     }
   }
 
-  public async requestFaucetFunds(address: string) {
-    console.log(`[LuffaSDK] Requesting 10 Dummy ETH from Faucet for ${address}...`);
-    const res = await fetch('http://localhost:3001/api/faucet', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address })
-    });
-    if (!res.ok) throw new Error("Failed to fund address");
-    return true;
-  }
-
   async getWalletAddress(): Promise<string> {
     if (this.isLuffaEnvironment) {
       return await (window as any).Luffa.wallet.getAddress();
@@ -79,7 +68,7 @@ class LuffaSDKWrapper {
     const formattedBalance = parseFloat(ethers.formatEther(balance));
     
     if (balance < txValue) {
-      alert(`Insufficient funds!\nYou have ${formattedBalance.toFixed(4)} ETH but need ${tx.value} ETH to post this task. Please wait for the dummy seeding to finish or restart the frontend.`);
+      alert(`Insufficient funds!\nYou have ${formattedBalance.toFixed(4)} ETH but need ${tx.value} ETH to post this task.`);
       throw new Error(`Insufficient funds: ${formattedBalance} ETH`);
     }
 
