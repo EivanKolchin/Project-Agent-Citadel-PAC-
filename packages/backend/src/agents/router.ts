@@ -79,12 +79,33 @@ Available Agents:
 ${JSON.stringify(agentsInfo, null, 2)}
     `;
 
-    const response = await this.model.generateContent({
-      contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userMessage}` }] }],
-      generationConfig: { maxOutputTokens: 1024, temperature: 0.1 },
-    });
-
-    const outputText = response.response.text();
+    let outputText: string;
+    try {
+      const response = await this.model.generateContent({
+        contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userMessage}` }] }],
+        generationConfig: { maxOutputTokens: 1024, temperature: 0.1 },
+      });
+      outputText = response.response.text();
+    } catch (e: any) {
+      console.warn(`[RouterAgent] Gemini API failed: ${e.message}. Using deterministic fallback.`);
+      const ranked = [...availableAgents].sort((a, b) => {
+        const capA = a.capabilities.join(" ").toLowerCase();
+        const capB = b.capabilities.join(" ").toLowerCase();
+        const taskText = task.description.toLowerCase();
+        const scoreA = (capA.includes(taskText) ? 2 : 0) + a.reputationScore + a.tasksCompleted;
+        const scoreB = (capB.includes(taskText) ? 2 : 0) + b.reputationScore + b.tasksCompleted;
+        return scoreB - scoreA;
+      });
+      const selected = ranked[0];
+      this.logDecision({
+        taskId: task.id,
+        selectedAgent: selected.address,
+        reasoning: "Selected using local fallback scoring (Gemini Error).",
+        confidence: 0.55,
+        timestamp: Date.now()
+      });
+      return selected.address;
+    }
     
     // Attempt to extract JSON if Claude added markdown code blocks
     const jsonMatch = outputText.match(/```json\n([\s\S]*?)\n```/) || outputText.match(/({[\s\S]*})/);
@@ -118,20 +139,20 @@ ${JSON.stringify(agentsInfo, null, 2)}
 You must respond with ONLY a JSON array of strings:
 ["subtask 1 description", "subtask 2 description", ...]`;
 
-    const response = await this.model.generateContent({
-      contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\nDecompose this task: ${task.description}` }] }],
-      generationConfig: { maxOutputTokens: 500, temperature: 0.2 },
-    });
-
-    const outputText = response.response.text();
-    const jsonMatch = outputText.match(/```json\n([\s\S]*?)\n```/) || outputText.match(/(\[[\s\S]*\])/);
-    const parsedStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : outputText;
-
     try {
+      const response = await this.model.generateContent({
+        contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\nDecompose this task: ${task.description}` }] }],
+        generationConfig: { maxOutputTokens: 500, temperature: 0.2 },
+      });
+
+      const outputText = response.response.text();
+      const jsonMatch = outputText.match(/```json\n([\s\S]*?)\n```/) || outputText.match(/(\[[\s\S]*\])/);
+      const parsedStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : outputText;
+
       return JSON.parse(parsedStr);
-    } catch (e) {
-      console.error("Failed to parse decomposition:", parsedStr);
-      throw new Error("Invalid response during task decomposition");
+    } catch (e: any) {
+      console.warn("[RouterAgent] Gemini API failed during decomposeTask. Returning original task.", e.message);
+      return [task.description];
     }
   }
 
@@ -140,16 +161,21 @@ You must respond with ONLY a JSON array of strings:
       return false;
     }
 
-    const systemPrompt = `Analyze the task description and decide if it is too complex for a single agent and should be decomposed into subtasks. 
+    try {
+      const systemPrompt = `Analyze the task description and decide if it is too complex for a single agent and should be decomposed into subtasks. 
 Reply with ONLY "true" or "false".`;
 
-    const response = await this.model.generateContent({
-      contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\nTask: ${taskDescription}` }] }],
-      generationConfig: { maxOutputTokens: 10, temperature: 0.1 },
-    });
+      const response = await this.model.generateContent({
+        contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\nTask: ${taskDescription}` }] }],
+        generationConfig: { maxOutputTokens: 10, temperature: 0.1 },
+      });
 
-    const outputText = response.response.text().trim().toLowerCase();
-    return outputText.includes("true");
+      const responseText = response.response.text().trim().toLowerCase();
+      return responseText.includes("true");
+    } catch(e: any) {
+      console.warn("[RouterAgent] Gemini API failed during shouldDecompose. Falling back to simple mode.", e.message);
+      return false;
+    }
   }
 
   private logDecision(decision: RoutingDecision) {

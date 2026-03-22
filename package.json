@@ -16,6 +16,7 @@
     "demo:agent": "ts-node packages/agents/examples/researchAgent.ts"
   },
   "dependencies": {
+    "cors": "^2.8.6",
     "ethers": "^6.11.1",
     "kill-port": "^2.0.1",
     "puppeteer": "^24.40.0"

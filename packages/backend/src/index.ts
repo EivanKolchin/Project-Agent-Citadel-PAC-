@@ -103,6 +103,30 @@ setInterval(() => {
 }, 30000);
 
 // --- Luffa Bot Execution Endpoints ---
+app.post("/api/agents/register", (req, res) => {
+  const { uid, secret, name, capabilities } = req.body;
+  if (!uid || !secret || !name) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+  
+  const existingIndex = LUFFA_BOTS.findIndex(b => b.uid === uid);
+  const newConfig = {
+    uid,
+    secret,
+    name,
+    capabilities: capabilities || ["general"]
+  };
+  
+  if (existingIndex >= 0) {
+    LUFFA_BOTS[existingIndex] = newConfig;
+  } else {
+    LUFFA_BOTS.push(newConfig);
+  }
+  
+  console.log(`[Agent Endpoint] Registered Custom UI Bot: ${name} (${uid})`);
+  res.json({ success: true, agent: newConfig });
+});
+
 app.post("/api/luffa/:uid/execute", async (req, res) => {
   const { uid } = req.params;
   const { taskId, description } = req.body;

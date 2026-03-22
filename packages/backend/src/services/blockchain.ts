@@ -200,13 +200,11 @@ export class BlockchainService {
     // We deterministically derived these wallets in deploy.ts. Wallet 0 is Deployer, Wallets 1-3 are Luffa Bots.
     let targetSigner = this.signer;
     try {
-      // Create identical deterministic signers from the hardhat test phrase to match the luffa bots
       const mnemonic = "test test test test test test test test test test test junk"; // Default hardhat mnemonic
-      const hdNode = ethers.HDNodeWallet.fromPhrase(mnemonic);
       
       // Let's iterate index 1..9 to see if any match the agentAddress
       for(let i=1; i<10; i++) {
-        const derivedWallet = hdNode.deriveChild(i);
+        const derivedWallet = ethers.HDNodeWallet.fromPhrase(mnemonic, "", "m/44'/60'/0'/0/" + i);
         if(derivedWallet.address.toLowerCase() === agentAddress.toLowerCase()) {
           targetSigner = new ethers.Wallet(derivedWallet.privateKey, this.provider);
           break;
@@ -260,22 +258,42 @@ export class BlockchainService {
     let totalVolumeWei = 0n;
 
     if (TASK_ESCROW_ADDRESS) {
-      // NOTE: For exact total volume/stats, we might need a dedicated smart contract function
-      // Here we approximate based on fetching open/latest tasks if possible,
-      // or we can fetch the nextTaskId and iterate.
       const nextTaskId: bigint = await this.withTimeout(this.taskEscrow.nextTaskId());
       
-      for (let i = 0n; i < nextTaskId; i++) {
-        const task = await this.withTimeout(this.taskEscrow.tasks(i));
-        if (Number(task.status) === 0 || Number(task.status) === 1) { // Open or Assigned
-          activeTasks++;
-        } else if (Number(task.status) === 2) { // Completed
-          completedTasks++;
-          // Add to volume only completed ones logic could apply, or total bounties posted:
-          // We'll calculate volume as total assigned/completed bounty volume 
-          // Note: In TaskEscrow, bounty is set to 0 to prevent reentrancy during release.
-          // This would require a better way to track volume on chain over time.
+      // Prevent network timeouts by avoiding full iteration if there are too many tasks
+      // Instead, just quickly grab active tasks using our in-memory cache if we implemented one
+      // For now, we limit the iteration to the last 100 tasks to prevent RPC timeouts
+      const startId = nextTaskId > 100n ? nextTaskId - 100n : 0n;
+      let openTasksInWindow = 0;
+      let compTasksInWindow = 0;
+
+      const promises = [];
+      for (let i = startId; i < nextTaskId; i++) {
+        promises.push(this.taskEscrow.tasks(i));
+      }
+      
+      try {
+        const tasks = await this.withTimeout(Promise.all(promises));
+        for (const task of tasks) {
+          if (Number(task.status) === 0 || Number(task.status) === 1) { // Open or Assigned
+            openTasksInWindow++;
+          } else if (Number(task.status) === 2 || Number(task.status) === 3) { // Completed or Failed
+            compTasksInWindow++;
+            // Approximated total volume: counting the bounty if logic applies (it resets to 0 in Escrow on completion, unfortunately)
+            // So we just add a dummy or tracked increment if we had events
+          }
         }
+      } catch (err) {
+        console.error("Failed to fetch task stats batch:", err);
+      }
+
+      // Extrapolate for UI purposes if we have more than 100 tasks
+      if (nextTaskId > 100n) {
+        activeTasks = openTasksInWindow;
+        completedTasks = Number(nextTaskId) - openTasksInWindow; 
+      } else {
+        activeTasks = openTasksInWindow;
+        completedTasks = compTasksInWindow;
       }
     }
 
@@ -283,7 +301,7 @@ export class BlockchainService {
       totalAgents,
       activeTasks,
       completedTasks,
-      totalVolume: ethers.formatEther(totalVolumeWei || 0) // Approximation depending on structure
+      totalVolume: ethers.formatEther(totalVolumeWei || 0) // Approximation
     };
   }
 }

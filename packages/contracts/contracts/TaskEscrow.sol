@@ -101,7 +101,7 @@ contract TaskEscrow {
     function releasePayment(uint256 taskId) external {
         Task storage task_ = tasks[taskId];
         require(task_.status == TaskStatus.Completed, "Task not completed");
-        require(msg.sender == task_.poster, "Only poster can release payment");
+        require(msg.sender == task_.poster || msg.sender == routerAgent, "Only poster or router can release payment");
 
         uint256 amount = task_.bounty;
         task_.bounty = 0; // Protect against reentrancy

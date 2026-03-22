@@ -13,6 +13,16 @@ export const Agents = () => {
   const { formatUsd } = useEthPrice();
   const [filter, setFilter] = useState('');
   const [regStatus, setRegStatus] = useState('');
+  const [showCustomReg, setShowCustomReg] = useState(false);
+  const [customUid, setCustomUid] = useState('');
+  const [customSecret, setCustomSecret] = useState('');
+  const [customName, setCustomName] = useState('');
+  const [customCaps, setCustomCaps] = useState('general,chat');
+  const [showCustomReg, setShowCustomReg] = useState(false);
+  const [customUid, setCustomUid] = useState('');
+  const [customSecret, setCustomSecret] = useState('');
+  const [customName, setCustomName] = useState('');
+  const [customCaps, setCustomCaps] = useState('general,chat');
 
   const filtered = agents.filter(a => !filter || a.capabilities.some((c: string) => c.toLowerCase().includes(filter.toLowerCase())));
 
@@ -34,11 +44,24 @@ export const Agents = () => {
       
       const iface = new Interface(AGENT_REGISTRY_ABI);
       const data = iface.encodeFunctionData("registerAgent", [
-        identity.username,
-        `Frontend-registered agent for ${identity.username}`,
-        `http://localhost:3001/api/luffa/${identity.id}`, // mock webhook for demo agent
-        ["general", "chat"]
+        showCustomReg ? customName : identity.username,
+        `Frontend-registered agent for ${showCustomReg ? customName : identity.username}`,
+        `http://localhost:3001/api/luffa/${showCustomReg ? customUid : identity.id}`,
+        showCustomReg ? customCaps.split(',').map(c => c.trim()) : ["general", "chat"]
       ]);
+
+      if (showCustomReg) {
+        await fetch('http://localhost:3001/api/agents/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: customUid,
+            secret: customSecret,
+            name: customName,
+            capabilities: customCaps.split(',').map(c => c.trim())
+          })
+        });
+      }
 
       await LuffaSDK.signTransaction({ 
         to: config.AGENT_REGISTRY_ADDRESS, 

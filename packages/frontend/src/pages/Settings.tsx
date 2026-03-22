@@ -11,11 +11,19 @@ export const Settings = () => {
   const [balance, setBalance] = useState<string>('0.00');
   const [isLoading, setIsLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'error' | 'success', text: string } | null>(null);
+  const [isDummyMode, setIsDummyMode] = useState<boolean>(false);
   const { formatUsd } = useEthPrice();
 
   useEffect(() => {
-    loadWalletData();
+    setIsDummyMode(localStorage.getItem('dummy_mode') === 'true');
+    const onStorageChange = () => setIsDummyMode(localStorage.getItem('dummy_mode') === 'true');
+    window.addEventListener('storage', onStorageChange);
+    return () => window.removeEventListener('storage', onStorageChange);
   }, []);
+
+  useEffect(() => {
+    loadWalletData();
+  }, [isDummyMode]);
 
   const loadWalletData = async () => {
     try {
@@ -63,6 +71,7 @@ export const Settings = () => {
       await LuffaSDK.requestFaucetFunds(targetAddress);
       
       localStorage.setItem('dummy_mode', 'true');
+      setIsDummyMode(true);
       
       // If we didn't have a wallet, we might want to automatically log them in with a new key
       // but the user just asked "make it not need wallet id". We can generate a new wallet on the fly and save it.
@@ -125,13 +134,27 @@ export const Settings = () => {
               </div>
             </div>
             
-            <button
-              onClick={handleSeedFunds}
-              disabled={isLoading || parseFloat(balance) > 0}
-              className="mt-4 text-xs bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:bg-white/10 disabled:text-zinc-500 disabled:cursor-not-allowed font-semibold py-2.5 px-5 rounded-xl transition-all shadow-lg relative z-10"
-            >
-              Seed 10 Dummy ETH
-            </button>
+            {isDummyMode ? (
+              <button
+                onClick={() => {
+                  localStorage.removeItem('dummy_mode');
+                  setIsDummyMode(false);
+                  window.dispatchEvent(new Event('storage'));
+                  setStatusMsg({ type: 'success', text: 'Returned to Normal Mode.' });
+                }}
+                className="mt-4 text-xs bg-zinc-800 text-white hover:bg-zinc-700 border border-white/10 font-semibold py-2.5 px-5 rounded-xl transition-all shadow-lg relative z-10"
+              >
+                Return to Normal Mode
+              </button>
+            ) : (
+              <button
+                onClick={handleSeedFunds}
+                disabled={isLoading || parseFloat(balance) > 0}
+                className="mt-4 text-xs bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:bg-white/10 disabled:text-zinc-500 disabled:cursor-not-allowed font-semibold py-2.5 px-5 rounded-xl transition-all shadow-lg relative z-10"
+              >
+                Seed 10 Dummy ETH
+              </button>
+            )}
           </div>
 
           {/* Import Wallet Form */}

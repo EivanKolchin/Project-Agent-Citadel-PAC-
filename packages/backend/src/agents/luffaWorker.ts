@@ -27,17 +27,22 @@ export class LuffaWorkerAgent {
 
     await luffaBotService.sendMessage(
       botConfig.secret,
-      "luffa_dev_123",
+      process.env.LUFFA_ADMIN_UID || "luffa_dev_123",
       `System: I have been assigned Task ${taskId}. Working on it...`
     );
 
     let outputText: string;
     if (this.model) {
-      const response = await this.model.generateContent({
-        contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\nTask:\n${description}` }] }],
-        generationConfig: { maxOutputTokens: 1024, temperature: 0.2 },
-      });
-      outputText = response.response.text();
+      try {
+        const response = await this.model.generateContent({
+          contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\nTask:\n${description}` }] }],
+          generationConfig: { maxOutputTokens: 1024, temperature: 0.2 },
+        });
+        outputText = response.response.text();
+      } catch (e: any) {
+        console.warn(`[LuffaWorkerAgent] Gemini API failed: ${e.message}. Using local stub response.`);
+        outputText = `[Local stub — Gemini API failed]\n\n${botConfig.name} summary for task ${taskId}:\n${description.slice(0, 500)}${description.length > 500 ? "…" : ""}`;
+      }
     } else {
       outputText = `[Local stub — add GEMINI_API_KEY for full AI]\n\n${botConfig.name} summary for task ${taskId}:\n${description.slice(0, 500)}${description.length > 500 ? "…" : ""}`;
     }
@@ -46,7 +51,7 @@ export class LuffaWorkerAgent {
 
     await luffaBotService.sendMessage(
       botConfig.secret,
-      "luffa_dev_123",
+      process.env.LUFFA_ADMIN_UID || "luffa_dev_123",
       `Task ${taskId} Completed!\n\n${outputText}`
     );
 
