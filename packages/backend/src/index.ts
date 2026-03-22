@@ -11,9 +11,16 @@ import { LUFFA_BOTS } from "./services/luffabot";
 import { Orchestrator } from "./orchestrator";
 import * as dotenv from "dotenv";
 import * as path from "path";
+import crypto from "crypto";
 
 // Load .env from root of monorepo
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
+
+// Automatically assign a secure JWT_SECRET if one isn't provided or if it's using a mock value
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'mock-secret') {
+  process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
+  console.log('NOTICE: Automatically generated a temporary secure JWT_SECRET for this session.');
+}
 
 const app = express();
 app.use(cors());
